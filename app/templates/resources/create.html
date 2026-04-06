@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}新規追加 | URL Archive{% endblock %}
+
+{% block content %}
+<section class="panel create-panel">
+    <div class="panel-header">
+        <div>
+            <p class="eyebrow">Compose</p>
+            <h2>URLを追加</h2>
+        </div>
+        <a href="{% url 'resources:list' %}" class="text-link">一覧へ戻る</a>
+    </div>
+
+    <p class="muted">
+        気になったページの URL、タイトル、メモ、タグをここで入力します。
+        登録すると取得ジョブがすぐに作成されます。
+    </p>
+
+    <form method="post" action="{% url 'resources:create' %}" class="form-stack create-form">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <div class="action-row action-row--start">
+            <button type="submit">登録して取得</button>
+            <a href="{% url 'resources:list' %}" class="text-link">キャンセル</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

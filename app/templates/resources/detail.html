@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}{{ resource.display_title }} | URL Archive{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-header">
+        <div>
+            <p class="eyebrow">{{ resource.domain }}</p>
+            <h2>{{ resource.display_title }}</h2>
+        </div>
+        <div class="action-row">
+            <form method="post" action="{% url 'resources:capture' resource.id %}">
+                {% csrf_token %}
+                <button type="submit">再取得</button>
+            </form>
+            <form method="post" action="{% url 'resources:detail' resource.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="_method" value="LINK_CHECK">
+                <button type="submit">リンク確認</button>
+            </form>
+            <form method="post" action="{% url 'resources:detail' resource.id %}" onsubmit="return confirm('本当に削除しますか?');">
+                {% csrf_token %}
+                <input type="hidden" name="_method" value="DELETE">
+                <button type="submit" class="danger">削除</button>
+            </form>
+        </div>
+    </div>
+
+    <dl class="meta-list">
+        <dt>元URL</dt>
+        <dd><a href="{{ resource.original_url }}" target="_blank" rel="noreferrer">{{ resource.original_url }}</a></dd>
+        <dt>正規化URL</dt>
+        <dd>{{ resource.normalized_url }}</dd>
+        <dt>取得状態</dt>
+        <dd>{{ resource.get_current_status_display }}</dd>
+        <dt>リンク状態</dt>
+        <dd>{{ resource.get_link_status_display }}</dd>
+        <dt>リンク確認</dt>
+        <dd>
+            {% if resource.last_link_check_at %}
+                {{ resource.last_link_check_at|date:"Y-m-d H:i" }}
+                {% if resource.last_link_check_http_status %}
+                    / HTTP {{ resource.last_link_check_http_status }}
+                {% endif %}
+            {% else %}
+                未確認
+            {% endif %}
+        </dd>
+        <dt>見直し状態</dt>
+        <dd>{{ resource.get_review_state_display }}</dd>
+        <dt>お気に入り</dt>
+        <dd>{% if resource.favorite %}はい{% else %}いいえ{% endif %}</dd>
+    </dl>
+    <div class="tag-row">
+        {% for tag in resource.tags.all %}
+            <span class="tag-pill" style="--tag-color: {{ tag.color }}">{{ tag.name }}</span>
+        {% empty %}
+            <span class="muted">タグなし</span>
+        {% endfor %}
+    </div>
+    {% if resource.note %}
+        <div class="summary">
+            <strong>メモ</strong>
+            <p>{{ resource.note|linebreaksbr }}</p>
+        </div>
+    {% endif %}
+    {% if resource.last_link_check_error %}
+        <p class="muted">リンク確認メモ: {{ resource.last_link_check_error }}</p>
+    {% endif %}
+</section>
+
+{% if resource.latest_snapshot %}
+<section class="panel">
+    <div class="panel-header">
+        <h2>最新スナップショット</h2>
+        <a href="{% url 'resources:snapshots' resource.id %}" class="text-link">履歴を見る</a>
+    </div>
+    {% if resource.link_status == "gone" or resource.link_status == "maybe_deleted" %}
+        <p class="summary">
+            現在のリンク状態は {{ resource.get_link_status_display }} ですが、保存済みスナップショットはこのまま閲覧できます。
+        </p>
+    {% endif %}
+    <div class="detail-grid">
+        <div>
+            <p><strong>ページタイトル:</strong> {{ resource.latest_snapshot.page_title|default:"-" }}</p>
+            <p><strong>AI要約:</strong> {{ resource.latest_snapshot.ai_summary|default:"-" }}</p>
+            <p><strong>カテゴリ:</strong> {{ resource.latest_snapshot.ai_category|default:"-" }}</p>
+            <p><strong>HTTP:</strong> {{ resource.latest_snapshot.http_status|default:"-" }}</p>
+            <p><strong>取得方法:</strong> {{ resource.latest_snapshot.get_fetch_method_display }}</p>
+            <p><strong>保存画像:</strong> {{ resource.latest_snapshot.image_count }} 件</p>
+            <p><strong>本文</strong></p>
+            <pre class="excerpt">{{ resource.latest_snapshot.extracted_text|truncatechars:1200 }}</pre>
+            {% if latest_snapshot_context.tag_candidates %}
+                <p><strong>タグ候補:</strong> {{ latest_snapshot_context.tag_candidates|join:", " }}</p>
+            {% endif %}
+            {% if latest_snapshot_context.similar_resources %}
+                <p><strong>類似候補:</strong></p>
+                <ul class="inline-list">
+                    {% for similar in latest_snapshot_context.similar_resources %}
+                        <li><a href="{{ similar.get_absolute_url }}">{{ similar.display_title }}</a></li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        </div>
+
+        <div class="snapshot-assets">
+            {% if resource.latest_snapshot.screenshot_full_path %}
+                <a href="/{{ resource.latest_snapshot.screenshot_full_path }}" target="_blank" rel="noreferrer" class="snapshot-preview-card">
+                    <p><strong>ページ全体スクリーンショット</strong></p>
+                    <img src="/{{ resource.latest_snapshot.screenshot_full_path }}" alt="Latest screenshot" class="screenshot-preview screenshot-preview--compact">
+                    <span class="image-card__meta">クリックで拡大表示</span>
+                </a>
+            {% endif %}
+
+            {% if resource.latest_snapshot.image_assets %}
+                <div>
+                    <p><strong>保存した画像</strong></p>
+                    <div class="image-gallery image-gallery--compact">
+                        {% for image in resource.latest_snapshot.image_assets %}
+                            <a href="/{{ image.path }}" target="_blank" rel="noreferrer" class="image-card">
+                                <img src="/{{ image.path }}" alt="Captured image {{ forloop.counter }}">
+                            </a>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% elif not resource.latest_snapshot.screenshot_full_path %}
+                <p class="muted">保存済みの画像はありません。</p>
+            {% endif %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<section class="panel">
+    <div class="panel-header">
+        <h2>編集</h2>
+    </div>
+    <form method="post" action="{% url 'resources:detail' resource.id %}" class="form-stack">
+        {% csrf_token %}
+        <input type="hidden" name="_method" value="PATCH">
+        {{ form.as_p }}
+        <button type="submit">更新</button>
+    </form>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <h2>取得履歴</h2>
+        <a href="{% url 'resources:snapshots' resource.id %}" class="text-link">すべて表示</a>
+    </div>
+    <div class="history-list">
+        {% for snapshot in snapshots %}
+            <article class="history-item {% if snapshot.screenshot_full_path %}history-item--with-preview{% endif %}">
+                {% if snapshot.screenshot_full_path %}
+                    <a href="{{ snapshot.get_absolute_url }}" class="history-item__preview">
+                        <img src="/{{ snapshot.screenshot_full_path }}" alt="Snapshot #{{ snapshot.snapshot_no }} preview" class="screenshot-preview screenshot-preview--thumb">
+                    </a>
+                {% endif %}
+                <div>
+                    <h3><a href="{{ snapshot.get_absolute_url }}">Snapshot #{{ snapshot.snapshot_no }}</a></h3>
+                    <p>{{ snapshot.fetched_at|date:"Y-m-d H:i" }} / {{ snapshot.get_fetch_method_display }} / HTTP {{ snapshot.http_status|default:"-" }} / 画像 {{ snapshot.image_count }} 件</p>
+                </div>
+                <p>{{ snapshot.page_title|default:snapshot.error_message|truncatechars:120 }}</p>
+            </article>
+        {% empty %}
+            <p class="muted">履歴はまだありません。</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

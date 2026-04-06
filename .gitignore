@@ -1,0 +1,15 @@
+.venv/
+.env
+__pycache__/
+*.py[cod]
+db.sqlite3
+.pytest_cache/
+staticfiles/
+storage/html/*
+storage/text/*
+storage/json/*
+storage/screenshots/*
+!storage/html/.gitkeep
+!storage/text/.gitkeep
+!storage/json/.gitkeep
+!storage/screenshots/.gitkeep

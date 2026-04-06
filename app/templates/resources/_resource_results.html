@@ -1,0 +1,88 @@
+<section
+    class="panel resource-results-panel"
+    data-resource-autorefresh
+    data-resource-fragment-url="{{ resource_fragment_url }}"
+    data-resource-signature="{{ resource_signature }}"
+    data-resource-poll-ms="{{ resource_poll_ms }}"
+>
+    <div class="panel-header">
+        <h2>URL一覧</h2>
+        <div class="panel-header__actions">
+            <span>{{ resource_count }} 件</span>
+            <span class="live-indicator" data-autorefresh-status>自動更新中</span>
+        </div>
+    </div>
+    <div class="resource-list resource-list--compact">
+        {% for resource in resources %}
+            <article class="resource-card resource-card--compact {% if resource.latest_screenshot_path %}resource-card--with-preview{% endif %}">
+                {% if resource.latest_screenshot_path %}
+                    <a href="{{ resource.get_absolute_url }}" class="resource-card__preview" aria-label="{{ resource.display_title }} の詳細へ">
+                        <img src="/{{ resource.latest_screenshot_path }}" alt="{{ resource.display_title }} のスクリーンショット">
+                    </a>
+                {% endif %}
+
+                <div class="resource-card__body">
+                <div class="resource-card__title">
+                    <h3><a href="{{ resource.get_absolute_url }}">{{ resource.display_title }}</a></h3>
+                    <div class="resource-card__chip-row">
+                        <span class="status-chip status-{{ resource.current_status }}">{{ resource.get_current_status_display }}</span>
+                        {% if resource.link_status != "unchecked" %}
+                            <span class="status-chip link-status-{{ resource.link_status }}">{{ resource.get_link_status_display }}</span>
+                        {% endif %}
+                        {% if resource.review_state != "none" %}
+                            <span class="review-chip review-{{ resource.review_state }}">{{ resource.get_review_state_display }}</span>
+                        {% endif %}
+                        {% if resource.favorite %}
+                            <span class="review-chip review-favorite">お気に入り</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="resource-card__meta-row">
+                    <span class="resource-card__meta">{{ resource.domain }}</span>
+                    <span class="resource-card__meta">更新: {{ resource.updated_at|date:"Y-m-d H:i" }}</span>
+                    <span class="resource-card__meta">
+                        リンク確認:
+                        {% if resource.last_link_check_at %}
+                            {{ resource.last_link_check_at|date:"Y-m-d H:i" }}
+                        {% else %}
+                            未確認
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="resource-card__url-row">
+                    <span class="resource-card__url">{{ resource.original_url }}</span>
+                </div>
+
+                {% if resource.note or resource.latest_snapshot and resource.latest_snapshot.ai_summary %}
+                    <p class="resource-card__snippet">
+                        {% if resource.note %}{{ resource.note|truncatechars:90 }}{% endif %}
+                        {% if resource.note and resource.latest_snapshot and resource.latest_snapshot.ai_summary %} / {% endif %}
+                        {% if resource.latest_snapshot and resource.latest_snapshot.ai_summary %}{{ resource.latest_snapshot.ai_summary|truncatechars:110 }}{% endif %}
+                    </p>
+                {% endif %}
+
+                <div class="resource-card__footer resource-card__footer--compact">
+                    <div class="tag-row tag-row--compact">
+                        {% for tag in resource.tags.all %}
+                            <span class="tag-pill" style="--tag-color: {{ tag.color }}">{{ tag.name }}</span>
+                        {% empty %}
+                            <span class="muted">タグなし</span>
+                        {% endfor %}
+                    </div>
+                    <div class="resource-card__actions">
+                        <a href="{{ resource.get_absolute_url }}" class="text-link">詳細</a>
+                        <form method="post" action="{% url 'resources:detail' resource.id %}" onsubmit="return confirm('本当に削除しますか?');">
+                            {% csrf_token %}
+                            <input type="hidden" name="_method" value="DELETE">
+                            <button type="submit" class="danger button-small">削除</button>
+                        </form>
+                    </div>
+                </div>
+                </div>
+            </article>
+        {% empty %}
+            <p class="muted">まだ登録された URL はありません。</p>
+        {% endfor %}
+    </div>
+</section>

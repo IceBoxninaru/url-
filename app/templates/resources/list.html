@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}一覧 | URL Archive{% endblock %}
+
+{% block content %}
+<section class="panel filter-panel">
+    <form method="get" action="{% url 'resources:list' %}" class="filter-toolbar">
+        <div class="filter-toolbar__primary">
+            <label class="filter-search">
+                <span class="filter-label">検索</span>
+                {{ filter_form.q }}
+            </label>
+            <label class="filter-inline">
+                <span class="filter-label">ドメイン</span>
+                {{ filter_form.domain }}
+            </label>
+            <label class="filter-inline">
+                <span class="filter-label">取得状態</span>
+                {{ filter_form.status }}
+            </label>
+            <label class="filter-inline">
+                <span class="filter-label">見直し</span>
+                {{ filter_form.review_state }}
+            </label>
+            <label class="checkbox-chip">
+                {{ filter_form.favorite_only }}
+                <span>お気に入りのみ</span>
+            </label>
+        </div>
+
+        <div class="filter-toolbar__actions">
+            <button type="submit">絞り込む</button>
+            <a href="{% url 'resources:list' %}" class="text-link">リセット</a>
+        </div>
+
+        <details class="filter-advanced">
+            <summary>タグで絞り込む</summary>
+            <div class="filter-advanced__body">
+                <p class="muted filter-hint">複数選択すると、すべてのタグを持つ URL に絞り込みます。</p>
+                <div class="tag-filter-options">
+                    {{ filter_form.tags }}
+                </div>
+            </div>
+        </details>
+    </form>
+</section>
+
+{% include "resources/_resource_results.html" %}
+{% endblock %}

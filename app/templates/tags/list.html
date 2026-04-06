@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}タグ | URL Archive{% endblock %}
+
+{% block content %}
+<section class="panel tag-create-panel">
+    <div class="panel-header">
+        <div>
+            <p class="eyebrow">Tag Setup</p>
+            <h2>タグを追加</h2>
+        </div>
+        <span class="muted">{{ tags|length }} 件</span>
+    </div>
+
+    <form method="post" action="{% url 'tags:list' %}" class="tag-create-form">
+        {% csrf_token %}
+        <label class="tag-compact-field tag-compact-field--name">
+            <span class="filter-label">名前</span>
+            {{ form.name }}
+        </label>
+        <label class="tag-compact-field tag-compact-field--color">
+            <span class="filter-label">色</span>
+            {{ form.color }}
+        </label>
+        <label class="tag-compact-field tag-compact-field--order">
+            <span class="filter-label">並び順</span>
+            {{ form.sort_order }}
+        </label>
+        <button type="submit">追加</button>
+    </form>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <h2>タグ管理</h2>
+        <span class="muted">1件ずつその場で更新できます</span>
+    </div>
+
+    <div class="tag-management-list">
+        {% for tag in tags %}
+            <article class="tag-management-row">
+                <form method="post" action="{% url 'tags:detail' tag.id %}" class="tag-inline-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="_method" value="PATCH">
+                    <span class="tag-pill" style="--tag-color: {{ tag.color }}">{{ tag.name }}</span>
+                    <label class="tag-compact-field tag-compact-field--name">
+                        <span class="sr-only">名前</span>
+                        <input type="text" name="name" value="{{ tag.name }}" aria-label="タグ名">
+                    </label>
+                    <label class="tag-compact-field tag-compact-field--color">
+                        <span class="sr-only">色</span>
+                        <input type="color" name="color" value="{{ tag.color }}" aria-label="色" class="tag-color-input">
+                    </label>
+                    <label class="tag-compact-field tag-compact-field--order">
+                        <span class="sr-only">並び順</span>
+                        <input type="number" name="sort_order" value="{{ tag.sort_order }}" min="0" step="1" aria-label="並び順">
+                    </label>
+                    <button type="submit">更新</button>
+                </form>
+
+                <form method="post" action="{% url 'tags:detail' tag.id %}" class="tag-delete-form" onsubmit="return confirm('このタグを削除しますか?');">
+                    {% csrf_token %}
+                    <input type="hidden" name="_method" value="DELETE">
+                    <button type="submit" class="danger">削除</button>
+                </form>
+            </article>
+        {% empty %}
+            <p class="muted">タグはまだありません。</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

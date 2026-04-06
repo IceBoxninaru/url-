@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Snapshot #{{ snapshot.snapshot_no }} | URL Archive{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-header">
+        <div>
+            <p class="eyebrow">{{ snapshot.resource.domain }}</p>
+            <h2>Snapshot #{{ snapshot.snapshot_no }}</h2>
+        </div>
+        <a href="{{ snapshot.resource.get_absolute_url }}" class="text-link">詳細へ戻る</a>
+    </div>
+    <div class="detail-grid">
+        <div>
+            <dl class="meta-list">
+                <dt>取得URL</dt>
+                <dd>{{ snapshot.fetch_url }}</dd>
+                <dt>取得方法</dt>
+                <dd>{{ snapshot.get_fetch_method_display }}</dd>
+                <dt>HTTP</dt>
+                <dd>{{ snapshot.http_status|default:"-" }}</dd>
+                <dt>AIカテゴリ</dt>
+                <dd>{{ snapshot.ai_category|default:"-" }}</dd>
+                <dt>保存画像数</dt>
+                <dd>{{ snapshot.image_count }}</dd>
+                <dt>エラー</dt>
+                <dd>{{ snapshot.error_message|default:"-" }}</dd>
+            </dl>
+            <p><strong>AI要約:</strong> {{ snapshot.ai_summary|default:"-" }}</p>
+            <p><strong>タグ候補:</strong> {{ tag_candidates|join:", "|default:"-" }}</p>
+            {% if similar_resources %}
+                <p><strong>類似候補:</strong></p>
+                <ul class="inline-list">
+                    {% for similar in similar_resources %}
+                        <li><a href="{{ similar.get_absolute_url }}">{{ similar.display_title }}</a></li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+            <p><strong>本文</strong></p>
+            <pre class="excerpt">{{ snapshot.extracted_text|default:"-" }}</pre>
+        </div>
+        <div class="snapshot-assets">
+            {% if snapshot.screenshot_full_path %}
+                <a href="/{{ snapshot.screenshot_full_path }}" target="_blank" rel="noreferrer" class="snapshot-preview-card">
+                    <p><strong>ページ全体スクリーンショット</strong></p>
+                    <img src="/{{ snapshot.screenshot_full_path }}" alt="Snapshot screenshot" class="screenshot-preview screenshot-preview--compact">
+                    <span class="image-card__meta">クリックで拡大表示</span>
+                </a>
+            {% endif %}
+
+            {% if snapshot.image_assets %}
+                <div>
+                    <p><strong>保存した画像</strong></p>
+                    <div class="image-gallery">
+                        {% for image in snapshot.image_assets %}
+                            <a href="/{{ image.path }}" target="_blank" rel="noreferrer" class="image-card">
+                                <img src="/{{ image.path }}" alt="Captured image {{ forloop.counter }}">
+                                <span class="image-card__meta">{{ image.size_bytes }} bytes</span>
+                            </a>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% elif not snapshot.screenshot_full_path %}
+                <p class="muted">保存済みの画像はありません。</p>
+            {% endif %}
+        </div>
+    </div>
+</section>
+{% endblock %}

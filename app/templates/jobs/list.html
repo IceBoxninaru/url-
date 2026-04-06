@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}ジョブ | URL Archive{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-header">
+        <h2>ジョブ一覧</h2>
+        <span>{{ jobs|length }} 件</span>
+    </div>
+    <table class="data-table job-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>種類</th>
+                <th>対象</th>
+                <th>状態</th>
+                <th>優先度</th>
+                <th>試行回数</th>
+                <th>予定時刻</th>
+                <th>エラー</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for job in jobs %}
+                <tr>
+                    <td data-label="ID">{{ job.id }}</td>
+                    <td data-label="種類">{{ job.get_job_type_display }}</td>
+                    <td data-label="対象"><a href="{{ job.resource.get_absolute_url }}">{{ job.resource.display_title }}</a></td>
+                    <td data-label="状態">{{ job.get_status_display }}</td>
+                    <td data-label="優先度">{{ job.priority }}</td>
+                    <td data-label="試行回数">{{ job.attempt_count }}</td>
+                    <td data-label="予定時刻">{{ job.scheduled_at|date:"Y-m-d H:i:s" }}</td>
+                    <td data-label="エラー">{{ job.error_message|truncatechars:100|default:"-" }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="8">ジョブはありません。</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

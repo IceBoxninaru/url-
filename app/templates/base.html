@@ -1,0 +1,39 @@
+{% load static %}
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <title>{% block title %}URL Archive{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="{% static 'app.css' %}">
+    <script src="{% static 'app.js' %}" defer></script>
+</head>
+<body>
+    <header class="shell-header">
+        <div class="shell-header__brand">
+            <p class="eyebrow">URL Archive Manager</p>
+            <h1><a href="{% url 'resources:list' %}">URLアーカイブ管理アプリ</a></h1>
+        </div>
+        <nav class="shell-nav">
+            <div class="shell-nav__links">
+                <a href="{% url 'resources:list' %}">一覧</a>
+                <a href="{% url 'tags:list' %}">タグ</a>
+                <a href="{% url 'jobs:list' %}">ジョブ</a>
+            </div>
+            <a href="{% url 'resources:create' %}" class="primary-link shell-nav__cta">新規追加</a>
+        </nav>
+    </header>
+
+    {% if messages %}
+        <section class="flash-stack">
+            {% for message in messages %}
+                <div class="flash flash-{{ message.tags|default:'info' }}">{{ message }}</div>
+            {% endfor %}
+        </section>
+    {% endif %}
+
+    <main class="page-shell">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

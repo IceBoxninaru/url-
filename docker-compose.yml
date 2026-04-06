@@ -1,0 +1,54 @@
+x-app-base: &app-base
+  image: url-archive-app:latest
+  env_file:
+    - .env
+  environment:
+    DB_BACKEND: postgresql
+    POSTGRES_HOST: db
+    POSTGRES_PORT: 5432
+    TZ: ${TZ:-Asia/Tokyo}
+  volumes:
+    - .:/srv/url_archive
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-url_archive}
+      POSTGRES_USER: ${POSTGRES_USER:-url_archive}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-url_archive}
+      TZ: ${TZ:-Asia/Tokyo}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-url_archive} -d ${POSTGRES_DB:-url_archive}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  migrate:
+    <<: *app-base
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -lc "python app/manage.py migrate"
+
+  web:
+    <<: *app-base
+    build: .
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: sh -lc "python app/manage.py runserver 0.0.0.0:8000"
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  worker:
+    <<: *app-base
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: sh -lc "python app/manage.py runworker"
+
+volumes:
+  postgres_data:

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}履歴 | {{ resource.display_title }}{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-header">
+        <div>
+            <p class="eyebrow">{{ resource.domain }}</p>
+            <h2>{{ resource.display_title }} の取得履歴</h2>
+        </div>
+        <a href="{{ resource.get_absolute_url }}" class="text-link">詳細へ戻る</a>
+    </div>
+    <div class="history-list">
+        {% for snapshot in snapshots %}
+            <article class="history-item {% if snapshot.screenshot_full_path %}history-item--with-preview{% endif %}">
+                {% if snapshot.screenshot_full_path %}
+                    <a href="{{ snapshot.get_absolute_url }}" class="history-item__preview">
+                        <img src="/{{ snapshot.screenshot_full_path }}" alt="Snapshot #{{ snapshot.snapshot_no }} preview" class="screenshot-preview screenshot-preview--thumb">
+                    </a>
+                {% endif %}
+                <div>
+                    <h3><a href="{{ snapshot.get_absolute_url }}">Snapshot #{{ snapshot.snapshot_no }}</a></h3>
+                    <p>{{ snapshot.fetched_at|date:"Y-m-d H:i" }} / {{ snapshot.get_fetch_method_display }} / HTTP {{ snapshot.http_status|default:"-" }}</p>
+                </div>
+                <p>{{ snapshot.page_title|default:snapshot.error_message|truncatechars:200 }}</p>
+            </article>
+        {% empty %}
+            <p class="muted">履歴はまだありません。</p>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}
