@@ -13,6 +13,16 @@
 .venv\Scripts\python app\manage.py runworker
 ```
 
+## X のログイン状態
+X の取得でログイン済み状態を使いたい場合は、`storage/auth/x.json` に Playwright の `storage_state` を置きます。  
+アプリは X / Twitter のURL取得時だけこのファイルを読みます。
+
+設定値:
+
+```powershell
+CAPTURE_X_STORAGE_STATE_PATH=storage/auth/x.json
+```
+
 ## Docker Compose
 ```powershell
 docker compose up --build

@@ -22,7 +22,12 @@ from resources.services import (
     collect_image_urls,
     collect_video_urls,
     enqueue_capture_job,
+    filter_video_candidate_urls,
+    get_playwright_storage_state_path,
+    is_observed_video_response,
     normalize_url,
+    normalize_media_candidate_url,
+    resolve_storage_state_path,
 )
 from snapshots.models import FetchMethod, Snapshot
 from tags.models import Tag
@@ -103,6 +108,72 @@ class URLNormalizationTests(TestCase):
                 "https://www.instagram.com/media/reel.mp4",
             ],
         )
+
+    def test_normalize_media_candidate_url_removes_partial_range_query(self):
+        normalized = normalize_media_candidate_url(
+            "https://scontent.cdninstagram.com/o1/v/t16/f2/m86/ABCDEFG.mp4?_nc_ht=scontent.cdninstagram.com&bytestart=0&byteend=999",
+            "https://www.instagram.com/reel/example/",
+        )
+
+        self.assertEqual(
+            normalized,
+            "https://scontent.cdninstagram.com/o1/v/t16/f2/m86/ABCDEFG.mp4?_nc_ht=scontent.cdninstagram.com",
+        )
+
+    def test_filter_video_candidate_urls_for_x_prefers_master_playlist_and_skips_init_fragment(self):
+        candidates = [
+            "https://video.twimg.com/ext_tw_video/123/pu/pl/playlist.m3u8?tag=12&variant_version=1",
+            "https://video.twimg.com/ext_tw_video/123/pu/pl/avc1/1280x720/playlist.m3u8?tag=12",
+            "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/0/0/init.mp4?tag=12",
+            "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/320x568/low.mp4?tag=12",
+            "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/720x1280/high.mp4?tag=12",
+        ]
+
+        self.assertEqual(
+            filter_video_candidate_urls(candidates, "x.com"),
+            [
+                "https://video.twimg.com/ext_tw_video/123/pu/pl/playlist.m3u8?tag=12&variant_version=1",
+                "https://video.twimg.com/ext_tw_video/123/pu/pl/avc1/1280x720/playlist.m3u8?tag=12",
+                "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/720x1280/high.mp4?tag=12",
+                "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/320x568/low.mp4?tag=12",
+            ],
+        )
+
+    def test_is_observed_video_response_for_x_accepts_playlist_and_rejects_init_fragment(self):
+        self.assertTrue(
+            is_observed_video_response(
+                "https://video.twimg.com/ext_tw_video/123/pu/pl/playlist.m3u8?tag=12&variant_version=1",
+                "x.com",
+                content_type="application/x-mpegURL",
+            )
+        )
+        self.assertFalse(
+            is_observed_video_response(
+                "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/0/0/init.mp4?tag=12",
+                "x.com",
+                content_type="video/mp4",
+            )
+        )
+
+    @override_settings(CAPTURE_X_STORAGE_STATE_PATH="storage/auth/x.json")
+    def test_resolve_storage_state_path_expands_relative_path_under_root(self):
+        resolved = resolve_storage_state_path(settings.CAPTURE_X_STORAGE_STATE_PATH)
+        self.assertEqual(resolved, settings.ROOT_DIR / "storage" / "auth" / "x.json")
+
+    @override_settings(CAPTURE_X_STORAGE_STATE_PATH="storage/auth/x.json")
+    def test_get_playwright_storage_state_path_returns_none_when_file_missing(self):
+        self.assertIsNone(get_playwright_storage_state_path("x.com"))
+
+    @override_settings(CAPTURE_X_STORAGE_STATE_PATH="storage/auth/x.json")
+    def test_get_playwright_storage_state_path_returns_file_for_x(self):
+        auth_dir = settings.ROOT_DIR / "storage" / "auth"
+        auth_dir.mkdir(parents=True, exist_ok=True)
+        target = auth_dir / "x.json"
+        target.write_text("{}", encoding="utf-8")
+        self.addCleanup(lambda: target.unlink(missing_ok=True))
+
+        self.assertEqual(get_playwright_storage_state_path("x.com"), target)
+        self.assertIsNone(get_playwright_storage_state_path("instagram.com"))
 
 
 class ResourceViewTests(StorageOverrideMixin, TestCase):

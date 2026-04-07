@@ -7,6 +7,7 @@ import mimetypes
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -114,6 +115,13 @@ class CapturedVideo:
     content_type: str = ""
 
 
+@dataclass
+class DownloadedVideoAssets:
+    assets: list["CapturedVideo"] = field(default_factory=list)
+    candidate_urls: list[str] = field(default_factory=list)
+    attempts: list[dict] = field(default_factory=list)
+
+
 def normalize_url(raw_url: str) -> str:
     candidate = raw_url.strip()
     if not candidate:
@@ -177,21 +185,187 @@ def move_storage_file(root: Path, resource_id: int, filename: str, source_path: 
     return target.relative_to(settings.ROOT_DIR).as_posix()
 
 
-def collect_image_urls(html: str, source_url: str) -> list[str]:
+def is_x_domain(domain: str) -> bool:
+    return matches_configured_domain(domain, ["x.com", "twitter.com"])
+
+
+def is_instagram_domain(domain: str) -> bool:
+    return matches_configured_domain(domain, ["instagram.com"])
+
+
+def is_scoped_social_capture_domain(domain: str) -> bool:
+    return is_x_domain(domain) or is_instagram_domain(domain)
+
+
+def resolve_storage_state_path(raw_path: str) -> Path:
+    candidate = Path(raw_path)
+    if not candidate.is_absolute():
+        candidate = settings.ROOT_DIR / candidate
+    return candidate
+
+
+def get_playwright_storage_state_path(page_domain: str) -> Path | None:
+    if not is_x_domain(page_domain):
+        return None
+    raw_path = getattr(settings, "CAPTURE_X_STORAGE_STATE_PATH", "").strip()
+    if not raw_path:
+        return None
+    candidate = resolve_storage_state_path(raw_path)
+    if not candidate.exists() or not candidate.is_file():
+        return None
+    return candidate
+
+
+def normalize_media_candidate_url(raw_url: str, source_url: str) -> str:
+    cleaned = html_unescape_and_clean_url(raw_url)
+    if not cleaned or cleaned.startswith(("data:", "blob:")):
+        return ""
+    absolute = urljoin(source_url, cleaned)
+    parsed = urlparse(absolute)
+    if parsed.scheme not in {"http", "https"}:
+        return ""
+    query_pairs = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() not in {"bytestart", "byteend", "range"}
+    ]
+    return urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            "",
+            urlencode(query_pairs, doseq=True),
+            "",
+        )
+    )
+
+
+def is_relevant_image_candidate(image_url: str, page_domain: str) -> bool:
+    parsed = urlparse(image_url.lower())
+    if is_x_domain(page_domain):
+        if not parsed.netloc.endswith(("twimg.com", "twitter.com", "x.com")):
+            return False
+        return any(
+            marker in parsed.path
+            for marker in ("/media/", "/ext_tw_video_thumb/", "/amplify_video_thumb/")
+        )
+    if is_instagram_domain(page_domain):
+        if "cdninstagram.com" in parsed.netloc or parsed.netloc.endswith("fbcdn.net"):
+            return not parsed.path.startswith("/rsrc.php")
+        return False
+    return True
+
+
+def is_relevant_video_candidate(video_url: str, page_domain: str) -> bool:
+    parsed = urlparse(video_url.lower())
+    if is_x_domain(page_domain):
+        if not parsed.netloc.endswith("video.twimg.com"):
+            return False
+        return is_x_hls_playlist_url(video_url) or is_x_progressive_video_url(video_url)
+    if not is_probable_video_url(video_url):
+        return False
+    if is_instagram_domain(page_domain):
+        return (
+            ("cdninstagram.com" in parsed.netloc or parsed.netloc.endswith("fbcdn.net"))
+            and parsed.path.endswith(".mp4")
+        )
+    return True
+
+
+def score_video_candidate(video_url: str) -> int:
+    match = re.search(r"/(\d+)x(\d+)/", urlparse(video_url).path)
+    if not match:
+        return 0
+    return int(match.group(1)) * int(match.group(2))
+
+
+def is_x_hls_playlist_url(video_url: str) -> bool:
+    parsed = urlparse(video_url.lower())
+    return parsed.netloc.endswith("video.twimg.com") and parsed.path.endswith(".m3u8") and "/pl/" in parsed.path
+
+
+def is_x_master_playlist_url(video_url: str) -> bool:
+    if not is_x_hls_playlist_url(video_url):
+        return False
+    parsed = urlparse(video_url.lower())
+    return "variant_version=" in parsed.query or "/pl/avc1/" not in parsed.path
+
+
+def is_x_progressive_video_url(video_url: str) -> bool:
+    parsed = urlparse(video_url.lower())
+    if not (parsed.netloc.endswith("video.twimg.com") and parsed.path.endswith(".mp4")):
+        return False
+    if "/aud/" in parsed.path:
+        return False
+    if "/0/0/" in parsed.path:
+        return False
+    return "/vid/" in parsed.path
+
+
+def score_x_video_candidate(video_url: str) -> int:
+    if is_x_master_playlist_url(video_url):
+        return 3_000_000_000 + score_video_candidate(video_url)
+    if is_x_hls_playlist_url(video_url):
+        return 2_000_000_000 + score_video_candidate(video_url)
+    if is_x_progressive_video_url(video_url):
+        return 1_000_000_000 + score_video_candidate(video_url)
+    return 0
+
+
+def dedupe_urls(urls: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for url in urls:
+        if url in seen:
+            continue
+        seen.add(url)
+        deduped.append(url)
+    return deduped
+
+
+def filter_image_candidate_urls(urls: list[str], page_domain: str) -> list[str]:
+    filtered = [url for url in dedupe_urls(urls) if not should_skip_image_url(url)]
+    if is_scoped_social_capture_domain(page_domain):
+        filtered = [url for url in filtered if is_relevant_image_candidate(url, page_domain)]
+    return filtered
+
+
+def filter_video_candidate_urls(urls: list[str], page_domain: str) -> list[str]:
+    filtered = [url for url in dedupe_urls(urls) if not should_skip_video_url(url)]
+    filtered = [url for url in filtered if is_relevant_video_candidate(url, page_domain)]
+    if is_x_domain(page_domain):
+        return sorted(filtered, key=score_x_video_candidate, reverse=True)
+    if is_instagram_domain(page_domain):
+        return filtered[:1]
+    return filtered
+
+
+def get_playwright_media_scope(page, page_domain: str):
+    selectors: list[str] = []
+    if is_x_domain(page_domain):
+        selectors = ["article[data-testid='tweet']"]
+    elif is_instagram_domain(page_domain):
+        selectors = ["main article"]
+    for selector in selectors:
+        try:
+            locator = page.locator(selector)
+            if locator.count():
+                return locator.first
+        except Exception:
+            continue
+    return None
+
+
+def collect_image_urls(html: str, source_url: str, page_domain: str = "") -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
     candidates: list[str] = []
 
     def push(raw_url: str | None):
         if not raw_url:
             return
-        raw_url = html_unescape_and_clean_url(raw_url)
-        if not raw_url or raw_url.startswith("data:"):
-            return
-        absolute = urljoin(source_url, raw_url)
-        parsed = urlparse(absolute)
-        if parsed.scheme not in {"http", "https"}:
-            return
-        if should_skip_image_url(absolute):
+        absolute = normalize_media_candidate_url(raw_url, source_url)
+        if not absolute:
             return
         if absolute not in candidates:
             candidates.append(absolute)
@@ -201,31 +375,29 @@ def collect_image_urls(html: str, source_url: str) -> list[str]:
         if key in {"og:image", "twitter:image"}:
             push(meta.get("content"))
 
-    for image in soup.find_all("img"):
-        push(image.get("src"))
-        push(image.get("data-src"))
-        if image.get("srcset"):
-            first_candidate = image["srcset"].split(",")[0].strip().split(" ")[0]
-            push(first_candidate)
+    for video in soup.find_all("video"):
+        push(video.get("poster"))
 
-    return candidates
+    if not is_scoped_social_capture_domain(page_domain):
+        for image in soup.find_all("img"):
+            push(image.get("src"))
+            push(image.get("data-src"))
+            if image.get("srcset"):
+                first_candidate = image["srcset"].split(",")[0].strip().split(" ")[0]
+                push(first_candidate)
+
+    return filter_image_candidate_urls(candidates, page_domain)
 
 
-def collect_video_urls(html: str, source_url: str) -> list[str]:
+def collect_video_urls(html: str, source_url: str, page_domain: str = "") -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
     candidates: list[str] = []
 
     def push(raw_url: str | None):
         if not raw_url:
             return
-        raw_url = html_unescape_and_clean_url(raw_url)
-        if not raw_url:
-            return
-        absolute = urljoin(source_url, raw_url)
-        parsed = urlparse(absolute)
-        if parsed.scheme not in {"http", "https"}:
-            return
-        if should_skip_video_url(absolute):
+        absolute = normalize_media_candidate_url(raw_url, source_url)
+        if not absolute:
             return
         if absolute not in candidates:
             candidates.append(absolute)
@@ -245,7 +417,7 @@ def collect_video_urls(html: str, source_url: str) -> list[str]:
         for source in video.find_all("source"):
             push(source.get("src"))
 
-    return candidates
+    return filter_video_candidate_urls(candidates, page_domain)
 
 
 def html_unescape_and_clean_url(raw_url: str) -> str:
@@ -286,6 +458,25 @@ def is_probable_video_url(video_url: str, content_type: str = "") -> bool:
     return suffix in VIDEO_EXTENSIONS
 
 
+def is_observed_video_response(
+    video_url: str,
+    page_domain: str,
+    *,
+    content_type: str = "",
+    resource_type: str = "",
+) -> bool:
+    if should_skip_video_url(video_url):
+        return False
+    if is_x_domain(page_domain):
+        return is_x_hls_playlist_url(video_url) or is_x_progressive_video_url(video_url)
+    if resource_type == "media":
+        return True
+    normalized_type = content_type.split(";")[0].strip().lower()
+    if normalized_type in {"application/x-mpegurl", "application/vnd.apple.mpegurl"}:
+        return True
+    return is_probable_video_url(video_url, content_type)
+
+
 def matches_configured_domain(domain: str, allowed_domains: list[str]) -> bool:
     normalized = domain.lower().strip()
     return any(
@@ -298,10 +489,19 @@ def supports_video_capture(domain: str) -> bool:
     return matches_configured_domain(domain, settings.CAPTURE_VIDEO_DOMAINS)
 
 
-def collect_playwright_image_urls(page) -> list[str]:
+def collect_playwright_image_urls(page, page_domain: str = "") -> list[str]:
     candidates: list[str] = []
+    scope = get_playwright_media_scope(page, page_domain)
+    if scope is not None:
+        image_locator = scope.locator("img")
+        video_locator = scope.locator("video")
+    elif is_scoped_social_capture_domain(page_domain):
+        return candidates
+    else:
+        image_locator = page.locator("img")
+        video_locator = page.locator("video")
     try:
-        image_entries = page.locator("img").evaluate_all(
+        image_entries = image_locator.evaluate_all(
             """
             (elements) =>
                 elements.map((el) => ({
@@ -313,10 +513,22 @@ def collect_playwright_image_urls(page) -> list[str]:
             """
         )
     except Exception:
-        return candidates
+        image_entries = []
+
+    try:
+        poster_entries = video_locator.evaluate_all(
+            """
+            (elements) =>
+                elements.map((el) => ({
+                    poster: el.poster || "",
+                }))
+            """
+        )
+    except Exception:
+        poster_entries = []
 
     for entry in image_entries:
-        raw_url = html_unescape_and_clean_url(entry.get("src", ""))
+        raw_url = normalize_media_candidate_url(entry.get("src", ""), page.url)
         if not raw_url:
             continue
         if should_skip_image_url(raw_url):
@@ -333,13 +545,25 @@ def collect_playwright_image_urls(page) -> list[str]:
         if parsed.scheme in {"http", "https"} and raw_url not in candidates:
             candidates.append(raw_url)
 
-    return candidates
+    for entry in poster_entries:
+        poster_url = normalize_media_candidate_url(entry.get("poster", ""), page.url)
+        if poster_url and poster_url not in candidates:
+            candidates.append(poster_url)
+
+    return filter_image_candidate_urls(candidates, page_domain)
 
 
-def collect_playwright_video_urls(page, response_urls: list[str] | None = None) -> list[str]:
+def collect_playwright_video_urls(page, page_domain: str = "", response_urls: list[str] | None = None) -> list[str]:
     candidates: list[str] = []
+    scope = get_playwright_media_scope(page, page_domain)
+    if scope is not None:
+        video_locator = scope.locator("video")
+    elif is_scoped_social_capture_domain(page_domain):
+        video_locator = None
+    else:
+        video_locator = page.locator("video")
     try:
-        video_entries = page.locator("video").evaluate_all(
+        video_entries = video_locator.evaluate_all(
             """
             (elements) =>
                 elements.map((el) => ({
@@ -354,20 +578,20 @@ def collect_playwright_video_urls(page, response_urls: list[str] | None = None) 
 
     for entry in video_entries:
         for raw_url in [entry.get("currentSrc", ""), entry.get("src", ""), *entry.get("sources", [])]:
-            normalized = html_unescape_and_clean_url(raw_url)
+            normalized = normalize_media_candidate_url(raw_url, page.url)
             if not normalized or should_skip_video_url(normalized):
                 continue
             if normalized not in candidates:
                 candidates.append(normalized)
 
     for raw_url in response_urls or []:
-        normalized = html_unescape_and_clean_url(raw_url)
+        normalized = normalize_media_candidate_url(raw_url, page.url)
         if not normalized or should_skip_video_url(normalized):
             continue
         if normalized not in candidates:
             candidates.append(normalized)
 
-    return candidates
+    return filter_video_candidate_urls(candidates, page_domain)
 
 
 def guess_image_extension(source_url: str, content_type: str) -> str:
@@ -419,20 +643,117 @@ def cleanup_capture_result(result: CaptureResult) -> None:
         delete_temp_file(video.temp_path)
 
 
-def download_image_assets(source_url: str, html: str, extra_urls: list[str] | None = None) -> list[CapturedImage]:
-    image_urls = collect_image_urls(html, source_url)
+def get_ffmpeg_executable() -> str | None:
+    try:
+        import imageio_ffmpeg
+    except Exception:
+        return None
+    try:
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+
+def remux_x_hls_to_mp4(video_url: str, max_size_bytes: int) -> tuple[CapturedVideo | None, dict]:
+    attempt = {
+        "candidate_url": video_url,
+        "final_url": "",
+        "mode": "x_hls_ffmpeg",
+        "result": "skipped",
+        "reason": "",
+        "response_status": None,
+        "content_type": "",
+        "content_length": "",
+        "output_size_bytes": 0,
+    }
+    ffmpeg = get_ffmpeg_executable()
+    if not ffmpeg:
+        attempt["reason"] = "ffmpeg_unavailable"
+        return None, attempt
+
+    temp_path: Path | None = None
+    try:
+        with httpx.Client(
+            follow_redirects=True,
+            timeout=settings.CAPTURE_HTTP_TIMEOUT,
+            headers={"User-Agent": settings.CAPTURE_HTTP_USER_AGENT},
+        ) as client:
+            response = client.get(video_url)
+        attempt["final_url"] = str(response.url)
+        attempt["response_status"] = response.status_code
+        attempt["content_type"] = response.headers.get("content-type", "")
+        attempt["content_length"] = response.headers.get("content-length", "")
+        if response.status_code >= 400:
+            attempt["reason"] = f"http_{response.status_code}"
+            return None, attempt
+
+        temp_path = create_temp_download_path(".mp4")
+        command = [
+            ffmpeg,
+            "-y",
+            "-loglevel",
+            "error",
+            "-protocol_whitelist",
+            "file,http,https,tcp,tls,crypto",
+            "-user_agent",
+            settings.CAPTURE_HTTP_USER_AGENT,
+            "-i",
+            video_url,
+            "-movflags",
+            "+faststart",
+            "-c",
+            "copy",
+            str(temp_path),
+        ]
+        result = subprocess.run(command, capture_output=True)
+        if result.returncode != 0:
+            attempt["result"] = "error"
+            attempt["reason"] = result.stderr.decode("utf-8", "ignore")[:500] or f"ffmpeg_exit_{result.returncode}"
+            delete_temp_file(temp_path)
+            return None, attempt
+
+        size_bytes = temp_path.stat().st_size if temp_path.exists() else 0
+        attempt["output_size_bytes"] = size_bytes
+        if size_bytes == 0:
+            attempt["reason"] = "empty_output"
+            delete_temp_file(temp_path)
+            return None, attempt
+        if size_bytes > max_size_bytes:
+            attempt["reason"] = "too_large"
+            delete_temp_file(temp_path)
+            return None, attempt
+
+        attempt["result"] = "saved"
+        return (
+            CapturedVideo(
+                source_url=video_url,
+                temp_path=temp_path,
+                size_bytes=size_bytes,
+                content_type="video/mp4",
+            ),
+            attempt,
+        )
+    except Exception as exc:
+        attempt["result"] = "error"
+        attempt["reason"] = str(exc)
+        delete_temp_file(temp_path)
+        return None, attempt
+
+
+def download_image_assets(
+    source_url: str,
+    html: str,
+    extra_urls: list[str] | None = None,
+    page_domain: str = "",
+) -> list[CapturedImage]:
+    image_urls = collect_image_urls(html, source_url, page_domain=page_domain)
     for extra_url in extra_urls or []:
-        normalized = html_unescape_and_clean_url(extra_url)
+        normalized = normalize_media_candidate_url(extra_url, source_url)
         if not normalized:
             continue
-        absolute = urljoin(source_url, normalized)
-        parsed = urlparse(absolute)
-        if parsed.scheme not in {"http", "https"}:
-            continue
-        if should_skip_image_url(absolute):
-            continue
-        if absolute not in image_urls:
-            image_urls.append(absolute)
+        if normalized not in image_urls:
+            image_urls.append(normalized)
+    image_urls = filter_image_candidate_urls(image_urls, page_domain)
     if not image_urls:
         return []
 
@@ -475,36 +796,66 @@ def download_image_assets(source_url: str, html: str, extra_urls: list[str] | No
     return captured
 
 
-def download_video_assets(source_url: str, html: str, extra_urls: list[str] | None = None) -> list[CapturedVideo]:
-    video_urls = collect_video_urls(html, source_url)
+def download_video_assets(
+    source_url: str,
+    html: str,
+    extra_urls: list[str] | None = None,
+    page_domain: str = "",
+) -> DownloadedVideoAssets:
+    video_urls = collect_video_urls(html, source_url, page_domain=page_domain)
     for extra_url in extra_urls or []:
-        normalized = html_unescape_and_clean_url(extra_url)
+        normalized = normalize_media_candidate_url(extra_url, source_url)
         if not normalized:
             continue
-        absolute = urljoin(source_url, normalized)
-        if should_skip_video_url(absolute):
-            continue
-        if absolute not in video_urls:
-            video_urls.append(absolute)
+        if normalized not in video_urls:
+            video_urls.append(normalized)
+    video_urls = filter_video_candidate_urls(video_urls, page_domain)
+    result = DownloadedVideoAssets(candidate_urls=list(video_urls))
     if not video_urls:
-        return []
+        return result
 
-    captured: list[CapturedVideo] = []
     with httpx.Client(
         follow_redirects=True,
         timeout=settings.CAPTURE_HTTP_TIMEOUT,
         headers={"User-Agent": settings.CAPTURE_HTTP_USER_AGENT},
     ) as client:
         for video_url in video_urls:
-            if len(captured) >= settings.CAPTURE_MAX_VIDEOS:
+            if len(result.assets) >= settings.CAPTURE_MAX_VIDEOS:
                 break
+            if is_x_domain(page_domain) and is_x_hls_playlist_url(video_url):
+                captured_video, attempt = remux_x_hls_to_mp4(video_url, settings.CAPTURE_MAX_VIDEO_BYTES)
+                result.attempts.append(attempt)
+                if captured_video is not None:
+                    result.assets.append(captured_video)
+                    if is_scoped_social_capture_domain(page_domain):
+                        break
+                continue
             temp_path: Path | None = None
+            attempt = {
+                "candidate_url": video_url,
+                "final_url": "",
+                "mode": "direct",
+                "result": "skipped",
+                "reason": "",
+                "response_status": None,
+                "content_type": "",
+                "content_length": "",
+                "output_size_bytes": 0,
+            }
             try:
                 with client.stream("GET", video_url) as response:
+                    attempt["final_url"] = str(response.url)
+                    attempt["response_status"] = response.status_code
+                    attempt["content_type"] = response.headers.get("content-type", "")
+                    attempt["content_length"] = response.headers.get("content-length", "")
                     if response.status_code >= 400:
+                        attempt["reason"] = f"http_{response.status_code}"
+                        result.attempts.append(attempt)
                         continue
                     content_type = response.headers.get("content-type", "")
                     if not is_probable_video_url(str(response.url), content_type):
+                        attempt["reason"] = "not_video"
+                        result.attempts.append(attempt)
                         continue
 
                     temp_path = create_temp_download_path(guess_video_extension(str(response.url), content_type))
@@ -520,10 +871,14 @@ def download_video_assets(source_url: str, html: str, extra_urls: list[str] | No
                                 break
                             handle.write(chunk)
                     if too_large or size_bytes == 0:
+                        attempt["reason"] = "too_large" if too_large else "empty_output"
                         delete_temp_file(temp_path)
+                        result.attempts.append(attempt)
                         continue
 
-                    captured.append(
+                    attempt["result"] = "saved"
+                    attempt["output_size_bytes"] = size_bytes
+                    result.assets.append(
                         CapturedVideo(
                             source_url=str(response.url),
                             temp_path=temp_path,
@@ -531,10 +886,15 @@ def download_video_assets(source_url: str, html: str, extra_urls: list[str] | No
                             content_type=content_type,
                         )
                     )
+                    if is_scoped_social_capture_domain(page_domain):
+                        result.attempts.append(attempt)
+                        break
             except Exception:
+                attempt["result"] = "error"
+                attempt["reason"] = "download_exception"
                 delete_temp_file(temp_path)
-                continue
-    return captured
+            result.attempts.append(attempt)
+    return result
 
 
 def extract_text_from_html(html: str, source_url: str) -> str:
@@ -668,7 +1028,7 @@ def should_use_playwright(resource: Resource, http_result: CaptureResult) -> boo
     return False
 
 
-def fetch_with_http(url: str, *, capture_videos: bool = False) -> CaptureResult:
+def fetch_with_http(url: str, *, capture_videos: bool = False, page_domain: str = "") -> CaptureResult:
     try:
         with httpx.Client(
             follow_redirects=True,
@@ -677,15 +1037,31 @@ def fetch_with_http(url: str, *, capture_videos: bool = False) -> CaptureResult:
         ) as client:
             response = client.get(url)
         html = response.text or ""
+        resolved_domain = page_domain or urlparse(str(response.url)).netloc
         metadata = extract_metadata(html) if html else {}
         extracted_text = extract_text_from_html(html, str(response.url)) if html else ""
-        captured_images = download_image_assets(str(response.url), html) if html else []
-        captured_videos = download_video_assets(str(response.url), html) if capture_videos and html else []
+        captured_images = download_image_assets(str(response.url), html, page_domain=resolved_domain) if html else []
+        video_download = (
+            download_video_assets(str(response.url), html, page_domain=resolved_domain)
+            if capture_videos and html
+            else DownloadedVideoAssets()
+        )
+        captured_videos = video_download.assets
         deleted_like = detect_deleted_like(
             extracted_text,
             metadata.get("page_title", ""),
             response.status_code,
         )
+        response_payload = {
+            "url": str(response.url),
+            "status_code": response.status_code,
+            "headers": dict(response.headers),
+        }
+        if capture_videos:
+            response_payload["video_capture"] = {
+                "candidate_urls": video_download.candidate_urls,
+                "attempts": video_download.attempts,
+            }
         return CaptureResult(
             fetch_url=str(response.url),
             fetch_method=FetchMethod.HTTP,
@@ -693,11 +1069,7 @@ def fetch_with_http(url: str, *, capture_videos: bool = False) -> CaptureResult:
             html=html,
             extracted_text=extracted_text,
             metadata=metadata,
-            response_payload={
-                "url": str(response.url),
-                "status_code": response.status_code,
-                "headers": dict(response.headers),
-            },
+            response_payload=response_payload,
             captured_images=captured_images,
             captured_videos=captured_videos,
             deleted_like=deleted_like,
@@ -707,7 +1079,7 @@ def fetch_with_http(url: str, *, capture_videos: bool = False) -> CaptureResult:
         return CaptureResult(fetch_url=url, fetch_method=FetchMethod.HTTP, error_message=str(exc))
 
 
-def fetch_with_playwright(url: str, *, capture_videos: bool = False) -> CaptureResult:
+def fetch_with_playwright(url: str, *, capture_videos: bool = False, page_domain: str = "") -> CaptureResult:
     try:
         from playwright.sync_api import sync_playwright
     except Exception as exc:  # pragma: no cover
@@ -716,81 +1088,115 @@ def fetch_with_playwright(url: str, *, capture_videos: bool = False) -> CaptureR
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
-            page = browser.new_page(
-                viewport={
-                    "width": settings.CAPTURE_VIEWPORT_WIDTH,
-                    "height": settings.CAPTURE_VIEWPORT_HEIGHT,
-                }
-            )
-            observed_video_urls: list[str] = []
-
-            def remember_video_response(response):
-                try:
-                    request = response.request
-                    resource_type = request.resource_type
-                except Exception:
-                    resource_type = ""
-                raw_url = getattr(response, "url", "")
-                if should_skip_video_url(raw_url):
-                    return
-                if resource_type == "media" or is_probable_video_url(raw_url):
-                    if raw_url not in observed_video_urls:
-                        observed_video_urls.append(raw_url)
-
-            page.on("response", remember_video_response)
-            response = page.goto(url, wait_until="domcontentloaded", timeout=settings.CAPTURE_PLAYWRIGHT_TIMEOUT_MS)
-            try:
-                page.wait_for_load_state("networkidle", timeout=5000)
-            except Exception:
-                pass
-            if capture_videos:
-                try:
-                    page.locator("video").evaluate_all(
-                        """
-                        (elements) => {
-                            elements.forEach((el) => {
-                                try {
-                                    el.muted = true;
-                                    el.preload = "auto";
-                                    el.playsInline = true;
-                                    const playResult = el.play && el.play();
-                                    if (playResult && typeof playResult.catch === "function") {
-                                        playResult.catch(() => {});
-                                    }
-                                } catch (error) {}
-                            });
-                        }
-                        """
-                    )
-                    page.wait_for_timeout(1500)
-                except Exception:
-                    pass
-            page.wait_for_timeout(3000)
-            playwright_image_urls = collect_playwright_image_urls(page)
-            playwright_video_urls = collect_playwright_video_urls(page, response_urls=observed_video_urls)
-            html = page.content()
-            screenshot = page.screenshot(full_page=True, type="png")
-            page_height = page.evaluate("() => document.documentElement.scrollHeight")
-            viewport = page.viewport_size or {
+            storage_state_path = get_playwright_storage_state_path(page_domain)
+            capture_domain = page_domain or urlparse(url).netloc
+            viewport_defaults = {
                 "width": settings.CAPTURE_VIEWPORT_WIDTH,
                 "height": settings.CAPTURE_VIEWPORT_HEIGHT,
             }
-            page_title = page.title()
-            browser.close()
+            context_kwargs = {"viewport": viewport_defaults}
+            if storage_state_path is not None:
+                context_kwargs["storage_state"] = str(storage_state_path)
+            context = browser.new_context(**context_kwargs)
+            try:
+                page = context.new_page()
+                observed_video_urls: list[str] = []
+                response_payload: dict = {
+                    "storage_state_used": bool(storage_state_path),
+                    "storage_state_path": str(storage_state_path) if storage_state_path else "",
+                }
+
+                def remember_video_response(response):
+                    try:
+                        request = response.request
+                        resource_type = request.resource_type
+                    except Exception:
+                        resource_type = ""
+                    raw_url = getattr(response, "url", "")
+                    try:
+                        content_type = response.headers.get("content-type", "")
+                    except Exception:
+                        content_type = ""
+                    if is_observed_video_response(
+                        raw_url,
+                        capture_domain,
+                        content_type=content_type,
+                        resource_type=resource_type,
+                    ):
+                        if raw_url not in observed_video_urls:
+                            observed_video_urls.append(raw_url)
+
+                page.on("response", remember_video_response)
+                response = page.goto(url, wait_until="domcontentloaded", timeout=settings.CAPTURE_PLAYWRIGHT_TIMEOUT_MS)
+                try:
+                    page.wait_for_load_state("networkidle", timeout=5000)
+                except Exception:
+                    pass
+                if capture_videos:
+                    try:
+                        page.locator("video").evaluate_all(
+                            """
+                            (elements) => {
+                                elements.forEach((el) => {
+                                    try {
+                                        el.muted = true;
+                                        el.preload = "auto";
+                                        el.playsInline = true;
+                                        const playResult = el.play && el.play();
+                                        if (playResult && typeof playResult.catch === "function") {
+                                            playResult.catch(() => {});
+                                        }
+                                    } catch (error) {}
+                                });
+                            }
+                            """
+                        )
+                        page.wait_for_timeout(1500)
+                    except Exception:
+                        pass
+                page.wait_for_timeout(3000)
+                playwright_image_urls = collect_playwright_image_urls(page, page_domain=page_domain)
+                playwright_video_urls = collect_playwright_video_urls(
+                    page,
+                    page_domain=page_domain,
+                    response_urls=observed_video_urls,
+                )
+                html = page.content()
+                screenshot = page.screenshot(full_page=True, type="png")
+                page_height = page.evaluate("() => document.documentElement.scrollHeight")
+                viewport = page.viewport_size or viewport_defaults
+                page_title = page.title()
+                response_payload["observed_video_urls"] = observed_video_urls
+            finally:
+                context.close()
+                browser.close()
 
         metadata = extract_metadata(html)
         if page_title and not metadata.get("page_title"):
             metadata["page_title"] = page_title
         extracted_text = extract_text_from_html(html, url) if html else ""
         final_url = response.url if response else url
-        captured_images = download_image_assets(final_url, html, extra_urls=playwright_image_urls) if html else []
-        captured_videos = (
-            download_video_assets(final_url, html, extra_urls=playwright_video_urls)
-            if capture_videos and html
+        resolved_domain = page_domain or urlparse(final_url).netloc
+        captured_images = (
+            download_image_assets(final_url, html, extra_urls=playwright_image_urls, page_domain=resolved_domain)
+            if html
             else []
         )
+        video_download = (
+            download_video_assets(final_url, html, extra_urls=playwright_video_urls, page_domain=resolved_domain)
+            if capture_videos and html
+            else DownloadedVideoAssets()
+        )
+        captured_videos = video_download.assets
         status_code = response.status if response else None
         deleted_like = detect_deleted_like(extracted_text, metadata.get("page_title", ""), status_code)
+        if capture_videos:
+            response_payload["video_capture"] = {
+                "observed_urls": observed_video_urls,
+                "collected_urls": playwright_video_urls,
+                "candidate_urls": video_download.candidate_urls,
+                "attempts": video_download.attempts,
+            }
         return CaptureResult(
             fetch_url=final_url,
             fetch_method=FetchMethod.PLAYWRIGHT,
@@ -802,6 +1208,7 @@ def fetch_with_playwright(url: str, *, capture_videos: bool = False) -> CaptureR
                 "url": final_url,
                 "status_code": status_code,
                 "viewport": viewport,
+                **response_payload,
             },
             screenshot_bytes=screenshot,
             screenshot_taken_at=timezone.now(),
@@ -821,9 +1228,17 @@ def choose_capture_result(resource: Resource) -> CaptureResult:
     source_url = resource.normalized_url or resource.original_url
     capture_videos = supports_video_capture(resource.domain)
     force_playwright = matches_configured_domain(resource.domain, settings.CAPTURE_JS_FALLBACK_DOMAINS)
-    http_result = fetch_with_http(source_url, capture_videos=capture_videos and not force_playwright)
+    http_result = fetch_with_http(
+        source_url,
+        capture_videos=capture_videos and not force_playwright,
+        page_domain=resource.domain,
+    )
     if force_playwright or should_use_playwright(resource, http_result):
-        playwright_result = fetch_with_playwright(source_url, capture_videos=capture_videos)
+        playwright_result = fetch_with_playwright(
+            source_url,
+            capture_videos=capture_videos,
+            page_domain=resource.domain,
+        )
         if playwright_result.is_success:
             cleanup_capture_result(http_result)
             return playwright_result
