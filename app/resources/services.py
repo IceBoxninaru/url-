@@ -4,8 +4,10 @@ import hashlib
 import html
 import json
 import mimetypes
+import os
 import re
 import shutil
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -53,6 +55,8 @@ STOP_WORDS = {
     "org",
 }
 
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm", ".m4v"}
+
 
 @dataclass
 class CaptureResult:
@@ -69,6 +73,7 @@ class CaptureResult:
     viewport_width: int | None = None
     viewport_height: int | None = None
     captured_images: list["CapturedImage"] = field(default_factory=list)
+    captured_videos: list["CapturedVideo"] = field(default_factory=list)
     error_message: str = ""
     deleted_like: bool = False
 
@@ -98,6 +103,14 @@ class LinkCheckResult:
 class CapturedImage:
     source_url: str
     content: bytes
+    content_type: str = ""
+
+
+@dataclass
+class CapturedVideo:
+    source_url: str
+    temp_path: Path
+    size_bytes: int
     content_type: str = ""
 
 
@@ -156,6 +169,14 @@ def write_storage_file(root: Path, resource_id: int, filename: str, content, bin
     return target.relative_to(settings.ROOT_DIR).as_posix()
 
 
+def move_storage_file(root: Path, resource_id: int, filename: str, source_path: Path) -> str:
+    resource_dir = build_resource_directory(root, resource_id)
+    resource_dir.mkdir(parents=True, exist_ok=True)
+    target = resource_dir / filename
+    shutil.move(str(source_path), target)
+    return target.relative_to(settings.ROOT_DIR).as_posix()
+
+
 def collect_image_urls(html: str, source_url: str) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
     candidates: list[str] = []
@@ -190,6 +211,43 @@ def collect_image_urls(html: str, source_url: str) -> list[str]:
     return candidates
 
 
+def collect_video_urls(html: str, source_url: str) -> list[str]:
+    soup = BeautifulSoup(html, "html.parser")
+    candidates: list[str] = []
+
+    def push(raw_url: str | None):
+        if not raw_url:
+            return
+        raw_url = html_unescape_and_clean_url(raw_url)
+        if not raw_url:
+            return
+        absolute = urljoin(source_url, raw_url)
+        parsed = urlparse(absolute)
+        if parsed.scheme not in {"http", "https"}:
+            return
+        if should_skip_video_url(absolute):
+            return
+        if absolute not in candidates:
+            candidates.append(absolute)
+
+    for meta in soup.find_all("meta"):
+        key = (meta.get("property") or meta.get("name") or "").lower()
+        if key in {
+            "og:video",
+            "og:video:url",
+            "og:video:secure_url",
+            "twitter:player:stream",
+        }:
+            push(meta.get("content"))
+
+    for video in soup.find_all("video"):
+        push(video.get("src"))
+        for source in video.find_all("source"):
+            push(source.get("src"))
+
+    return candidates
+
+
 def html_unescape_and_clean_url(raw_url: str) -> str:
     cleaned = html.unescape(raw_url).strip()
     cleaned = re.sub(r'["\')\];,]+$', "", cleaned)
@@ -208,6 +266,36 @@ def should_skip_image_url(image_url: str) -> bool:
     if parsed.netloc.startswith("abs.twimg.com") and parsed.path.endswith("/og/image.png"):
         return True
     return False
+
+
+def should_skip_video_url(video_url: str) -> bool:
+    lowered = video_url.lower()
+    parsed = urlparse(lowered)
+    if lowered.startswith(("data:", "blob:")):
+        return True
+    if parsed.scheme not in {"http", "https"}:
+        return True
+    return False
+
+
+def is_probable_video_url(video_url: str, content_type: str = "") -> bool:
+    normalized_type = content_type.split(";")[0].strip().lower()
+    if normalized_type.startswith("video/"):
+        return True
+    suffix = Path(urlparse(video_url).path).suffix.lower()
+    return suffix in VIDEO_EXTENSIONS
+
+
+def matches_configured_domain(domain: str, allowed_domains: list[str]) -> bool:
+    normalized = domain.lower().strip()
+    return any(
+        normalized == allowed or normalized.endswith(f".{allowed}")
+        for allowed in allowed_domains
+    )
+
+
+def supports_video_capture(domain: str) -> bool:
+    return matches_configured_domain(domain, settings.CAPTURE_VIDEO_DOMAINS)
 
 
 def collect_playwright_image_urls(page) -> list[str]:
@@ -248,6 +336,40 @@ def collect_playwright_image_urls(page) -> list[str]:
     return candidates
 
 
+def collect_playwright_video_urls(page, response_urls: list[str] | None = None) -> list[str]:
+    candidates: list[str] = []
+    try:
+        video_entries = page.locator("video").evaluate_all(
+            """
+            (elements) =>
+                elements.map((el) => ({
+                    currentSrc: el.currentSrc || "",
+                    src: el.src || "",
+                    sources: Array.from(el.querySelectorAll("source")).map((source) => source.src || ""),
+                }))
+            """
+        )
+    except Exception:
+        video_entries = []
+
+    for entry in video_entries:
+        for raw_url in [entry.get("currentSrc", ""), entry.get("src", ""), *entry.get("sources", [])]:
+            normalized = html_unescape_and_clean_url(raw_url)
+            if not normalized or should_skip_video_url(normalized):
+                continue
+            if normalized not in candidates:
+                candidates.append(normalized)
+
+    for raw_url in response_urls or []:
+        normalized = html_unescape_and_clean_url(raw_url)
+        if not normalized or should_skip_video_url(normalized):
+            continue
+        if normalized not in candidates:
+            candidates.append(normalized)
+
+    return candidates
+
+
 def guess_image_extension(source_url: str, content_type: str) -> str:
     normalized_type = content_type.split(";")[0].strip().lower()
     extension = mimetypes.guess_extension(normalized_type) if normalized_type else ""
@@ -260,6 +382,41 @@ def guess_image_extension(source_url: str, content_type: str) -> str:
     if suffix:
         return suffix
     return ".img"
+
+
+def guess_video_extension(source_url: str, content_type: str) -> str:
+    normalized_type = content_type.split(";")[0].strip().lower()
+    extension = mimetypes.guess_extension(normalized_type) if normalized_type else ""
+    if extension == ".qt":
+        extension = ".mov"
+    if extension:
+        return extension
+
+    suffix = Path(urlparse(source_url).path).suffix.lower()
+    if suffix in VIDEO_EXTENSIONS:
+        return suffix
+    return ".mp4"
+
+
+def create_temp_download_path(extension: str) -> Path:
+    suffix = extension if extension.startswith(".") else f".{extension}"
+    fd, raw_path = tempfile.mkstemp(prefix="url-archive-", suffix=suffix)
+    os.close(fd)
+    return Path(raw_path)
+
+
+def delete_temp_file(path: Path | None) -> None:
+    if not path:
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def cleanup_capture_result(result: CaptureResult) -> None:
+    for video in result.captured_videos:
+        delete_temp_file(video.temp_path)
 
 
 def download_image_assets(source_url: str, html: str, extra_urls: list[str] | None = None) -> list[CapturedImage]:
@@ -314,6 +471,68 @@ def download_image_assets(source_url: str, html: str, extra_urls: list[str] | No
                         )
                     )
             except Exception:
+                continue
+    return captured
+
+
+def download_video_assets(source_url: str, html: str, extra_urls: list[str] | None = None) -> list[CapturedVideo]:
+    video_urls = collect_video_urls(html, source_url)
+    for extra_url in extra_urls or []:
+        normalized = html_unescape_and_clean_url(extra_url)
+        if not normalized:
+            continue
+        absolute = urljoin(source_url, normalized)
+        if should_skip_video_url(absolute):
+            continue
+        if absolute not in video_urls:
+            video_urls.append(absolute)
+    if not video_urls:
+        return []
+
+    captured: list[CapturedVideo] = []
+    with httpx.Client(
+        follow_redirects=True,
+        timeout=settings.CAPTURE_HTTP_TIMEOUT,
+        headers={"User-Agent": settings.CAPTURE_HTTP_USER_AGENT},
+    ) as client:
+        for video_url in video_urls:
+            if len(captured) >= settings.CAPTURE_MAX_VIDEOS:
+                break
+            temp_path: Path | None = None
+            try:
+                with client.stream("GET", video_url) as response:
+                    if response.status_code >= 400:
+                        continue
+                    content_type = response.headers.get("content-type", "")
+                    if not is_probable_video_url(str(response.url), content_type):
+                        continue
+
+                    temp_path = create_temp_download_path(guess_video_extension(str(response.url), content_type))
+                    size_bytes = 0
+                    too_large = False
+                    with temp_path.open("wb") as handle:
+                        for chunk in response.iter_bytes():
+                            if not chunk:
+                                continue
+                            size_bytes += len(chunk)
+                            if size_bytes > settings.CAPTURE_MAX_VIDEO_BYTES:
+                                too_large = True
+                                break
+                            handle.write(chunk)
+                    if too_large or size_bytes == 0:
+                        delete_temp_file(temp_path)
+                        continue
+
+                    captured.append(
+                        CapturedVideo(
+                            source_url=str(response.url),
+                            temp_path=temp_path,
+                            size_bytes=size_bytes,
+                            content_type=content_type,
+                        )
+                    )
+            except Exception:
+                delete_temp_file(temp_path)
                 continue
     return captured
 
@@ -438,7 +657,7 @@ def check_resource_link_status(resource: Resource, *, force: bool = False) -> Re
 
 def should_use_playwright(resource: Resource, http_result: CaptureResult) -> bool:
     domain = resource.domain.lower()
-    if domain in settings.CAPTURE_JS_FALLBACK_DOMAINS:
+    if matches_configured_domain(domain, settings.CAPTURE_JS_FALLBACK_DOMAINS):
         return True
     if http_result.error_message:
         return True
@@ -449,7 +668,7 @@ def should_use_playwright(resource: Resource, http_result: CaptureResult) -> boo
     return False
 
 
-def fetch_with_http(url: str) -> CaptureResult:
+def fetch_with_http(url: str, *, capture_videos: bool = False) -> CaptureResult:
     try:
         with httpx.Client(
             follow_redirects=True,
@@ -461,6 +680,7 @@ def fetch_with_http(url: str) -> CaptureResult:
         metadata = extract_metadata(html) if html else {}
         extracted_text = extract_text_from_html(html, str(response.url)) if html else ""
         captured_images = download_image_assets(str(response.url), html) if html else []
+        captured_videos = download_video_assets(str(response.url), html) if capture_videos and html else []
         deleted_like = detect_deleted_like(
             extracted_text,
             metadata.get("page_title", ""),
@@ -479,6 +699,7 @@ def fetch_with_http(url: str) -> CaptureResult:
                 "headers": dict(response.headers),
             },
             captured_images=captured_images,
+            captured_videos=captured_videos,
             deleted_like=deleted_like,
             error_message="" if response.status_code < 400 else f"HTTP {response.status_code}",
         )
@@ -486,7 +707,7 @@ def fetch_with_http(url: str) -> CaptureResult:
         return CaptureResult(fetch_url=url, fetch_method=FetchMethod.HTTP, error_message=str(exc))
 
 
-def fetch_with_playwright(url: str) -> CaptureResult:
+def fetch_with_playwright(url: str, *, capture_videos: bool = False) -> CaptureResult:
     try:
         from playwright.sync_api import sync_playwright
     except Exception as exc:  # pragma: no cover
@@ -501,13 +722,52 @@ def fetch_with_playwright(url: str) -> CaptureResult:
                     "height": settings.CAPTURE_VIEWPORT_HEIGHT,
                 }
             )
+            observed_video_urls: list[str] = []
+
+            def remember_video_response(response):
+                try:
+                    request = response.request
+                    resource_type = request.resource_type
+                except Exception:
+                    resource_type = ""
+                raw_url = getattr(response, "url", "")
+                if should_skip_video_url(raw_url):
+                    return
+                if resource_type == "media" or is_probable_video_url(raw_url):
+                    if raw_url not in observed_video_urls:
+                        observed_video_urls.append(raw_url)
+
+            page.on("response", remember_video_response)
             response = page.goto(url, wait_until="domcontentloaded", timeout=settings.CAPTURE_PLAYWRIGHT_TIMEOUT_MS)
             try:
                 page.wait_for_load_state("networkidle", timeout=5000)
             except Exception:
                 pass
+            if capture_videos:
+                try:
+                    page.locator("video").evaluate_all(
+                        """
+                        (elements) => {
+                            elements.forEach((el) => {
+                                try {
+                                    el.muted = true;
+                                    el.preload = "auto";
+                                    el.playsInline = true;
+                                    const playResult = el.play && el.play();
+                                    if (playResult && typeof playResult.catch === "function") {
+                                        playResult.catch(() => {});
+                                    }
+                                } catch (error) {}
+                            });
+                        }
+                        """
+                    )
+                    page.wait_for_timeout(1500)
+                except Exception:
+                    pass
             page.wait_for_timeout(3000)
             playwright_image_urls = collect_playwright_image_urls(page)
+            playwright_video_urls = collect_playwright_video_urls(page, response_urls=observed_video_urls)
             html = page.content()
             screenshot = page.screenshot(full_page=True, type="png")
             page_height = page.evaluate("() => document.documentElement.scrollHeight")
@@ -524,6 +784,11 @@ def fetch_with_playwright(url: str) -> CaptureResult:
         extracted_text = extract_text_from_html(html, url) if html else ""
         final_url = response.url if response else url
         captured_images = download_image_assets(final_url, html, extra_urls=playwright_image_urls) if html else []
+        captured_videos = (
+            download_video_assets(final_url, html, extra_urls=playwright_video_urls)
+            if capture_videos and html
+            else []
+        )
         status_code = response.status if response else None
         deleted_like = detect_deleted_like(extracted_text, metadata.get("page_title", ""), status_code)
         return CaptureResult(
@@ -544,6 +809,7 @@ def fetch_with_playwright(url: str) -> CaptureResult:
             viewport_width=viewport["width"],
             viewport_height=viewport["height"],
             captured_images=captured_images,
+            captured_videos=captured_videos,
             deleted_like=deleted_like,
             error_message="" if not status_code or status_code < 400 else f"HTTP {status_code}",
         )
@@ -553,12 +819,16 @@ def fetch_with_playwright(url: str) -> CaptureResult:
 
 def choose_capture_result(resource: Resource) -> CaptureResult:
     source_url = resource.normalized_url or resource.original_url
-    http_result = fetch_with_http(source_url)
-    if should_use_playwright(resource, http_result):
-        playwright_result = fetch_with_playwright(source_url)
+    capture_videos = supports_video_capture(resource.domain)
+    force_playwright = matches_configured_domain(resource.domain, settings.CAPTURE_JS_FALLBACK_DOMAINS)
+    http_result = fetch_with_http(source_url, capture_videos=capture_videos and not force_playwright)
+    if force_playwright or should_use_playwright(resource, http_result):
+        playwright_result = fetch_with_playwright(source_url, capture_videos=capture_videos)
         if playwright_result.is_success:
+            cleanup_capture_result(http_result)
             return playwright_result
         if http_result.html or http_result.http_status:
+            cleanup_capture_result(playwright_result)
             return http_result
         return playwright_result
     return http_result
@@ -576,6 +846,7 @@ def persist_snapshot(resource: Resource, result: CaptureResult) -> Snapshot:
     text_path = ""
     screenshot_path = ""
     image_assets: list[dict] = []
+    video_assets: list[dict] = []
 
     if result.html:
         html_path = write_storage_file(
@@ -622,6 +893,22 @@ def persist_snapshot(resource: Resource, result: CaptureResult) -> Snapshot:
                 "size_bytes": len(image.content),
             }
         )
+    for index, video in enumerate(result.captured_videos, start=1):
+        extension = guess_video_extension(video.source_url, video.content_type)
+        video_path = move_storage_file(
+            settings.VIDEO_STORAGE_ROOT,
+            resource.id,
+            f"{prefix}_vid_{index:02d}{extension}",
+            video.temp_path,
+        )
+        video_assets.append(
+            {
+                "source_url": video.source_url,
+                "path": video_path,
+                "content_type": video.content_type,
+                "size_bytes": video.size_bytes,
+            }
+        )
 
     metadata = result.metadata
     payload_basis = result.extracted_text or result.html or result.error_message
@@ -642,6 +929,7 @@ def persist_snapshot(resource: Resource, result: CaptureResult) -> Snapshot:
         extracted_text=result.extracted_text,
         content_hash=content_hash,
         image_assets=image_assets,
+        video_assets=video_assets,
         raw_html_path=html_path,
         raw_text_path=text_path,
         raw_json_path=json_path,
@@ -755,20 +1043,23 @@ def run_ai_pipeline(snapshot: Snapshot) -> AIResult:
 
 def execute_capture_job(job: CaptureJob) -> Snapshot:
     result = choose_capture_result(job.resource)
-    with transaction.atomic():
-        resource = Resource.objects.select_for_update().get(pk=job.resource_id)
-        snapshot = persist_snapshot(resource, result)
-        if result.fetch_url and result.fetch_url != resource.normalized_url and not snapshot.error_message:
-            resource.normalized_url = normalize_url(result.fetch_url)
-            resource.update_domain_from_url()
-        resource.latest_snapshot = snapshot
-        resource.current_status = status_from_snapshot(snapshot)
-        resource.save(update_fields=["normalized_url", "domain", "latest_snapshot", "current_status", "updated_at"])
-    if resource.current_status == ResourceStatus.FETCH_FAILED:
-        raise RuntimeError(snapshot.error_message or "Capture failed.")
-    if snapshot.is_success:
-        enqueue_ai_job(snapshot.resource, snapshot)
-    return snapshot
+    try:
+        with transaction.atomic():
+            resource = Resource.objects.select_for_update().get(pk=job.resource_id)
+            snapshot = persist_snapshot(resource, result)
+            if result.fetch_url and result.fetch_url != resource.normalized_url and not snapshot.error_message:
+                resource.normalized_url = normalize_url(result.fetch_url)
+                resource.update_domain_from_url()
+            resource.latest_snapshot = snapshot
+            resource.current_status = status_from_snapshot(snapshot)
+            resource.save(update_fields=["normalized_url", "domain", "latest_snapshot", "current_status", "updated_at"])
+        if resource.current_status == ResourceStatus.FETCH_FAILED:
+            raise RuntimeError(snapshot.error_message or "Capture failed.")
+        if snapshot.is_success:
+            enqueue_ai_job(snapshot.resource, snapshot)
+        return snapshot
+    finally:
+        cleanup_capture_result(result)
 
 
 def execute_ai_job(job: CaptureJob) -> Snapshot:
@@ -792,6 +1083,7 @@ def delete_resource_with_artifacts(resource: Resource) -> None:
         settings.JSON_STORAGE_ROOT,
         settings.SCREENSHOT_STORAGE_ROOT,
         settings.IMAGE_STORAGE_ROOT,
+        settings.VIDEO_STORAGE_ROOT,
     ):
         target = build_resource_directory(root, resource_id)
         if target.exists():

@@ -617,11 +617,27 @@ button.danger {
     gap: 12px;
 }
 
+.video-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+
 .image-gallery--compact {
     grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
 }
 
+.video-gallery--compact {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
 .image-card {
+    display: grid;
+    gap: 6px;
+    color: inherit;
+}
+
+.video-card {
     display: grid;
     gap: 6px;
     color: inherit;
@@ -634,6 +650,15 @@ button.danger {
     border-radius: 14px;
     border: 1px solid var(--line);
     background: white;
+}
+
+.video-card video {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: black;
 }
 
 .image-card__meta {

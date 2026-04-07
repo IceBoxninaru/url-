@@ -2,6 +2,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
+import os
 
 from django.conf import settings
 from django.test import Client, TestCase, override_settings
@@ -15,9 +16,11 @@ from resources.models import LinkStatus, Resource, ResourceStatus, ReviewState
 from resources.services import (
     CaptureResult,
     CapturedImage,
+    CapturedVideo,
     LinkCheckResult,
     check_resource_link_status,
     collect_image_urls,
+    collect_video_urls,
     enqueue_capture_job,
     normalize_url,
 )
@@ -35,6 +38,7 @@ class StorageOverrideMixin:
             JSON_STORAGE_ROOT=self.storage_base / "json",
             SCREENSHOT_STORAGE_ROOT=self.storage_base / "screenshots",
             IMAGE_STORAGE_ROOT=self.storage_base / "images",
+            VIDEO_STORAGE_ROOT=self.storage_base / "videos",
         )
         self.settings_override.enable()
         self.addCleanup(self.settings_override.disable)
@@ -72,6 +76,31 @@ class URLNormalizationTests(TestCase):
             [
                 "https://pbs.twimg.com/media/abc123?format=jpg&name=small",
                 "https://cdn.example.com/content/photo.png",
+            ],
+        )
+
+    def test_collect_video_urls_skips_blob_urls_and_collects_meta_and_sources(self):
+        html = """
+        <html>
+            <head>
+                <meta property="og:video" content="https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/sample.mp4">
+            </head>
+            <body>
+                <video src="blob:https://x.com/example"></video>
+                <video>
+                    <source src="/media/reel.mp4">
+                </video>
+            </body>
+        </html>
+        """
+
+        urls = collect_video_urls(html, "https://www.instagram.com/p/example/")
+
+        self.assertEqual(
+            urls,
+            [
+                "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/sample.mp4",
+                "https://www.instagram.com/media/reel.mp4",
             ],
         )
 
@@ -380,6 +409,39 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertContains(response, "リンク切れ")
         self.assertContains(response, "HTTP 404")
 
+    def test_detail_displays_saved_videos(self):
+        resource = Resource.objects.create(
+            original_url="https://x.com/example/status/1",
+            normalized_url="https://x.com/example/status/1",
+            domain="x.com",
+            title_manual="Video Post",
+        )
+        snapshot = Snapshot.objects.create(
+            resource=resource,
+            snapshot_no=1,
+            fetch_url=resource.normalized_url,
+            fetch_method=FetchMethod.PLAYWRIGHT,
+            http_status=200,
+            page_title="Video",
+            video_assets=[
+                {
+                    "source_url": "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/sample.mp4",
+                    "path": "storage/videos/resource_0001/snapshot_0001_vid_01.mp4",
+                    "content_type": "video/mp4",
+                    "size_bytes": 42,
+                }
+            ],
+        )
+        resource.latest_snapshot = snapshot
+        resource.save(update_fields=["latest_snapshot"])
+
+        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+            response = self.client.get(reverse("resources:detail", args=[resource.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "保存動画")
+        self.assertContains(response, snapshot.video_assets[0]["path"])
+
     def test_post_link_check_redirects_after_refresh(self):
         resource = Resource.objects.create(
             original_url="https://example.com/manual-check",
@@ -409,6 +471,13 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             domain="example.com",
             title_manual="Article",
         )
+
+    def create_temp_video(self, content: bytes = b"fake-video-bytes") -> tuple[Path, int]:
+        handle, raw_path = tempfile.mkstemp(prefix="url-archive-test-video-", suffix=".mp4")
+        with os.fdopen(handle, "wb") as temp_file:
+            temp_file.write(content)
+        self.addCleanup(lambda: Path(raw_path).unlink(missing_ok=True))
+        return Path(raw_path), len(content)
 
     def test_capture_success_persists_snapshot_updates_resource_and_enqueues_ai(self):
         enqueue_capture_job(self.resource)
@@ -468,6 +537,41 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         image_path = settings.ROOT_DIR / snapshot.image_assets[0]["path"]
         self.assertTrue(image_path.exists())
 
+    def test_capture_success_persists_downloaded_videos(self):
+        self.resource.domain = "x.com"
+        self.resource.normalized_url = "https://x.com/example/status/1"
+        self.resource.original_url = "https://x.com/example/status/1"
+        self.resource.save(update_fields=["domain", "normalized_url", "original_url"])
+        enqueue_capture_job(self.resource)
+        temp_path, size_bytes = self.create_temp_video()
+        capture_result = CaptureResult(
+            fetch_url="https://x.com/example/status/1",
+            fetch_method=FetchMethod.PLAYWRIGHT,
+            http_status=200,
+            html="<html><body><video src='https://video.twimg.com/ext_tw_video/sample.mp4'></video></body></html>",
+            extracted_text="Video body",
+            metadata={"page_title": "Captured video"},
+            response_payload={"status_code": 200},
+            captured_videos=[
+                CapturedVideo(
+                    source_url="https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/sample.mp4",
+                    temp_path=temp_path,
+                    size_bytes=size_bytes,
+                    content_type="video/mp4",
+                )
+            ],
+        )
+
+        with patch("resources.services.choose_capture_result", return_value=capture_result):
+            self.assertTrue(run_one_job())
+
+        snapshot = Snapshot.objects.get()
+        self.assertEqual(snapshot.video_count, 1)
+        self.assertEqual(snapshot.video_assets[0]["source_url"], "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/sample.mp4")
+        video_path = settings.ROOT_DIR / snapshot.video_assets[0]["path"]
+        self.assertTrue(video_path.exists())
+        self.assertFalse(temp_path.exists())
+
     def test_failed_capture_retries_and_records_failure_snapshot(self):
         enqueue_capture_job(self.resource)
         failure = CaptureResult(
@@ -524,6 +628,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
 
     def test_delete_removes_artifacts_and_related_rows(self):
         enqueue_capture_job(self.resource)
+        temp_path, size_bytes = self.create_temp_video()
         capture_result = CaptureResult(
             fetch_url="https://example.com/article",
             fetch_method=FetchMethod.HTTP,
@@ -539,6 +644,14 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
                     content_type="image/jpeg",
                 )
             ],
+            captured_videos=[
+                CapturedVideo(
+                    source_url="https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/sample.mp4",
+                    temp_path=temp_path,
+                    size_bytes=size_bytes,
+                    content_type="video/mp4",
+                )
+            ],
         )
 
         with patch("resources.services.choose_capture_result", return_value=capture_result):
@@ -547,8 +660,10 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         snapshot = Snapshot.objects.get()
         html_path = settings.ROOT_DIR / snapshot.raw_html_path
         image_path = settings.ROOT_DIR / snapshot.image_assets[0]["path"]
+        video_path = settings.ROOT_DIR / snapshot.video_assets[0]["path"]
         self.assertTrue(html_path.exists())
         self.assertTrue(image_path.exists())
+        self.assertTrue(video_path.exists())
 
         client = Client()
         response = client.post(
@@ -562,6 +677,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         self.assertFalse(CaptureJob.objects.exists())
         self.assertFalse(html_path.exists())
         self.assertFalse(image_path.exists())
+        self.assertFalse(video_path.exists())
 
     def test_detail_delete_accepts_csrf_protected_method_override(self):
         client = Client(enforce_csrf_checks=True)

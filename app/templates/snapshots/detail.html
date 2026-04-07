@@ -24,6 +24,8 @@
                 <dd>{{ snapshot.ai_category|default:"-" }}</dd>
                 <dt>保存画像数</dt>
                 <dd>{{ snapshot.image_count }}</dd>
+                <dt>保存動画数</dt>
+                <dd>{{ snapshot.video_count }}</dd>
                 <dt>エラー</dt>
                 <dd>{{ snapshot.error_message|default:"-" }}</dd>
             </dl>
@@ -61,8 +63,22 @@
                         {% endfor %}
                     </div>
                 </div>
-            {% elif not snapshot.screenshot_full_path %}
-                <p class="muted">保存済みの画像はありません。</p>
+            {% endif %}
+
+            {% if snapshot.video_assets %}
+                <div>
+                    <p><strong>保存した動画</strong></p>
+                    <div class="video-gallery">
+                        {% for video in snapshot.video_assets %}
+                            <a href="/{{ video.path }}" target="_blank" rel="noreferrer" class="video-card">
+                                <video src="/{{ video.path }}" controls preload="metadata"></video>
+                                <span class="image-card__meta">{{ video.size_bytes }} bytes</span>
+                            </a>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% elif not snapshot.screenshot_full_path and not snapshot.image_assets %}
+                <p class="muted">保存済みの画像・動画はありません。</p>
             {% endif %}
         </div>
     </div>

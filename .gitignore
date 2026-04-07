@@ -9,7 +9,9 @@ storage/html/*
 storage/text/*
 storage/json/*
 storage/screenshots/*
+storage/videos/*
 !storage/html/.gitkeep
 !storage/text/.gitkeep
 !storage/json/.gitkeep
 !storage/screenshots/.gitkeep
+!storage/videos/.gitkeep

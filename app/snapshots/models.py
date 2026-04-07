@@ -27,6 +27,7 @@ class Snapshot(models.Model):
     ai_category = models.CharField(max_length=120, blank=True)
     ai_payload = models.JSONField(default=dict, blank=True)
     image_assets = models.JSONField(default=list, blank=True)
+    video_assets = models.JSONField(default=list, blank=True)
     content_hash = models.CharField(max_length=64, blank=True, db_index=True)
     raw_html_path = models.CharField(max_length=500, blank=True)
     raw_text_path = models.CharField(max_length=500, blank=True)
@@ -58,6 +59,10 @@ class Snapshot(models.Model):
     @property
     def image_count(self) -> int:
         return len(self.image_assets or [])
+
+    @property
+    def video_count(self) -> int:
+        return len(self.video_assets or [])
 
     def get_absolute_url(self):
         return reverse("snapshots:detail", args=[self.pk])

@@ -89,6 +89,7 @@
             <p><strong>HTTP:</strong> {{ resource.latest_snapshot.http_status|default:"-" }}</p>
             <p><strong>取得方法:</strong> {{ resource.latest_snapshot.get_fetch_method_display }}</p>
             <p><strong>保存画像:</strong> {{ resource.latest_snapshot.image_count }} 件</p>
+            <p><strong>保存動画:</strong> {{ resource.latest_snapshot.video_count }} 件</p>
             <p><strong>本文</strong></p>
             <pre class="excerpt">{{ resource.latest_snapshot.extracted_text|truncatechars:1200 }}</pre>
             {% if latest_snapshot_context.tag_candidates %}
@@ -124,8 +125,21 @@
                         {% endfor %}
                     </div>
                 </div>
-            {% elif not resource.latest_snapshot.screenshot_full_path %}
-                <p class="muted">保存済みの画像はありません。</p>
+            {% endif %}
+
+            {% if resource.latest_snapshot.video_assets %}
+                <div>
+                    <p><strong>保存した動画</strong></p>
+                    <div class="video-gallery video-gallery--compact">
+                        {% for video in resource.latest_snapshot.video_assets %}
+                            <a href="/{{ video.path }}" target="_blank" rel="noreferrer" class="video-card">
+                                <video src="/{{ video.path }}" controls preload="metadata"></video>
+                            </a>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% elif not resource.latest_snapshot.screenshot_full_path and not resource.latest_snapshot.image_assets %}
+                <p class="muted">保存済みの画像・動画はありません。</p>
             {% endif %}
         </div>
     </div>
@@ -159,7 +173,7 @@
                 {% endif %}
                 <div>
                     <h3><a href="{{ snapshot.get_absolute_url }}">Snapshot #{{ snapshot.snapshot_no }}</a></h3>
-                    <p>{{ snapshot.fetched_at|date:"Y-m-d H:i" }} / {{ snapshot.get_fetch_method_display }} / HTTP {{ snapshot.http_status|default:"-" }} / 画像 {{ snapshot.image_count }} 件</p>
+                    <p>{{ snapshot.fetched_at|date:"Y-m-d H:i" }} / {{ snapshot.get_fetch_method_display }} / HTTP {{ snapshot.http_status|default:"-" }} / 画像 {{ snapshot.image_count }} 件 / 動画 {{ snapshot.video_count }} 件</p>
                 </div>
                 <p>{{ snapshot.page_title|default:snapshot.error_message|truncatechars:120 }}</p>
             </article>

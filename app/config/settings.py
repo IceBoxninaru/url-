@@ -134,6 +134,7 @@ TEXT_STORAGE_ROOT = STORAGE_ROOT / 'text'
 JSON_STORAGE_ROOT = STORAGE_ROOT / 'json'
 SCREENSHOT_STORAGE_ROOT = STORAGE_ROOT / 'screenshots'
 IMAGE_STORAGE_ROOT = STORAGE_ROOT / 'images'
+VIDEO_STORAGE_ROOT = STORAGE_ROOT / 'videos'
 
 CAPTURE_HTTP_TIMEOUT = int(os.getenv("CAPTURE_HTTP_TIMEOUT", "20"))
 CAPTURE_HTTP_USER_AGENT = os.getenv(
@@ -145,6 +146,16 @@ CAPTURE_VIEWPORT_WIDTH = int(os.getenv("CAPTURE_VIEWPORT_WIDTH", "1440"))
 CAPTURE_VIEWPORT_HEIGHT = int(os.getenv("CAPTURE_VIEWPORT_HEIGHT", "900"))
 CAPTURE_MAX_IMAGES = int(os.getenv("CAPTURE_MAX_IMAGES", "8"))
 CAPTURE_MAX_IMAGE_BYTES = int(os.getenv("CAPTURE_MAX_IMAGE_BYTES", "8388608"))
+CAPTURE_MAX_VIDEOS = int(os.getenv("CAPTURE_MAX_VIDEOS", "4"))
+CAPTURE_MAX_VIDEO_BYTES = int(os.getenv("CAPTURE_MAX_VIDEO_BYTES", str(10 * 1024 * 1024 * 1024)))
+CAPTURE_VIDEO_DOMAINS = [
+    item.strip().lower()
+    for item in os.getenv(
+        "CAPTURE_VIDEO_DOMAINS",
+        "x.com,twitter.com,instagram.com",
+    ).split(",")
+    if item.strip()
+]
 CAPTURE_JS_FALLBACK_DOMAINS = [
     item.strip().lower()
     for item in os.getenv(
