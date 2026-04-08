@@ -1,4 +1,5 @@
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -18,11 +19,14 @@ from resources.services import (
     CapturedImage,
     CapturedVideo,
     LinkCheckResult,
+    MediaProbeResult,
     check_resource_link_status,
     collect_image_urls,
     collect_video_urls,
+    download_video_assets,
     enqueue_capture_job,
     filter_video_candidate_urls,
+    get_ffprobe_executable,
     get_playwright_storage_state_path,
     is_observed_video_response,
     normalize_url,
@@ -48,6 +52,40 @@ class StorageOverrideMixin:
         self.settings_override.enable()
         self.addCleanup(self.settings_override.disable)
         self.addCleanup(lambda: shutil.rmtree(self.storage_base, ignore_errors=True))
+
+
+class FakeStreamResponse:
+    def __init__(self, url: str, *, content_type: str, content: bytes, status_code: int = 200):
+        self.url = url
+        self.status_code = status_code
+        self.headers = {
+            "content-type": content_type,
+            "content-length": str(len(content)),
+        }
+        self._content = content
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def iter_bytes(self):
+        yield self._content
+
+
+class FakeHttpClient:
+    def __init__(self, responses: dict[str, FakeStreamResponse]):
+        self.responses = responses
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def stream(self, method: str, url: str):
+        return self.responses[url]
 
 
 class URLNormalizationTests(TestCase):
@@ -139,6 +177,20 @@ class URLNormalizationTests(TestCase):
             ],
         )
 
+    def test_filter_video_candidate_urls_for_instagram_keeps_multiple_candidates(self):
+        candidates = [
+            "https://scontent.cdninstagram.com/o1/v/t16/f2/m86/320x568/low.mp4",
+            "https://scontent.cdninstagram.com/o1/v/t16/f2/m86/720x1280/high.mp4",
+        ]
+
+        self.assertEqual(
+            filter_video_candidate_urls(candidates, "instagram.com"),
+            [
+                "https://scontent.cdninstagram.com/o1/v/t16/f2/m86/720x1280/high.mp4",
+                "https://scontent.cdninstagram.com/o1/v/t16/f2/m86/320x568/low.mp4",
+            ],
+        )
+
     def test_is_observed_video_response_for_x_accepts_playlist_and_rejects_init_fragment(self):
         self.assertTrue(
             is_observed_video_response(
@@ -174,6 +226,16 @@ class URLNormalizationTests(TestCase):
 
         self.assertEqual(get_playwright_storage_state_path("x.com"), target)
         self.assertIsNone(get_playwright_storage_state_path("instagram.com"))
+
+    @override_settings(CAPTURE_FFPROBE_PATH="storage/tools/ffprobe.exe")
+    def test_get_ffprobe_executable_uses_configured_path(self):
+        tools_dir = settings.ROOT_DIR / "storage" / "tools"
+        tools_dir.mkdir(parents=True, exist_ok=True)
+        target = tools_dir / "ffprobe.exe"
+        target.write_text("", encoding="utf-8")
+        self.addCleanup(lambda: target.unlink(missing_ok=True))
+
+        self.assertEqual(get_ffprobe_executable(), str(target))
 
 
 class ResourceViewTests(StorageOverrideMixin, TestCase):
@@ -642,6 +704,215 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         video_path = settings.ROOT_DIR / snapshot.video_assets[0]["path"]
         self.assertTrue(video_path.exists())
         self.assertFalse(temp_path.exists())
+
+    def test_capture_success_persists_downloaded_video_metadata(self):
+        self.resource.domain = "instagram.com"
+        self.resource.normalized_url = "https://www.instagram.com/reel/1"
+        self.resource.original_url = "https://www.instagram.com/reel/1"
+        self.resource.save(update_fields=["domain", "normalized_url", "original_url"])
+        enqueue_capture_job(self.resource)
+        temp_path, size_bytes = self.create_temp_video()
+        capture_result = CaptureResult(
+            fetch_url="https://www.instagram.com/reel/1",
+            fetch_method=FetchMethod.PLAYWRIGHT,
+            http_status=200,
+            html="<html><body>Instagram</body></html>",
+            extracted_text="Instagram body",
+            metadata={"page_title": "Instagram video"},
+            response_payload={"status_code": 200},
+            captured_videos=[
+                CapturedVideo(
+                    source_url="https://scontent.cdninstagram.com/video.mp4",
+                    temp_path=temp_path,
+                    size_bytes=size_bytes,
+                    content_type="video/mp4",
+                    metadata={
+                        "has_video": True,
+                        "has_audio": True,
+                        "duration_sec": 12.3,
+                        "extraction_strategy": "instagram_direct",
+                        "failure_reason": "",
+                    },
+                )
+            ],
+        )
+
+        with patch("resources.services.choose_capture_result", return_value=capture_result):
+            self.assertTrue(run_one_job())
+
+        snapshot = Snapshot.objects.get()
+        self.assertTrue(snapshot.video_assets[0]["has_video"])
+        self.assertTrue(snapshot.video_assets[0]["has_audio"])
+        self.assertEqual(snapshot.video_assets[0]["duration_sec"], 12.3)
+        self.assertEqual(snapshot.video_assets[0]["extraction_strategy"], "instagram_direct")
+
+    def test_download_video_assets_for_instagram_marks_video_only_as_partial(self):
+        responses = {
+            "https://scontent.cdninstagram.com/video-only.mp4": FakeStreamResponse(
+                "https://scontent.cdninstagram.com/video-only.mp4",
+                content_type="video/mp4",
+                content=b"video-only",
+            )
+        }
+        extra_candidates = [
+            {
+                "url": "https://scontent.cdninstagram.com/video-only.mp4",
+                "source": "network_response",
+                "media_kind": "video",
+                "content_type": "video/mp4",
+                "resource_type": "media",
+            }
+        ]
+
+        with patch("resources.services.httpx.Client", return_value=FakeHttpClient(responses)):
+            with patch("resources.services.get_ffprobe_executable", return_value="ffprobe"):
+                with patch(
+                    "resources.services.MediaProbe.probe_file",
+                    return_value=MediaProbeResult(has_video=True, has_audio=False, duration_sec=9.5),
+                ):
+                    result = download_video_assets(
+                        "https://www.instagram.com/reel/example/",
+                        "<html></html>",
+                        page_domain="instagram.com",
+                        extra_candidates=extra_candidates,
+                    )
+
+        self.assertEqual(result.extraction_status, "partial")
+        self.assertEqual(result.failure_reason, "video_only_candidate")
+        self.assertEqual(result.assets, [])
+        self.assertTrue(result.attempts[0]["has_video"])
+        self.assertFalse(result.attempts[0]["has_audio"])
+        self.assertEqual(result.summary["video_only_count"], 1)
+
+    def test_download_video_assets_for_instagram_muxes_video_and_audio_candidates(self):
+        responses = {
+            "https://scontent.cdninstagram.com/video.mp4": FakeStreamResponse(
+                "https://scontent.cdninstagram.com/video.mp4",
+                content_type="video/mp4",
+                content=b"video-track",
+            ),
+            "https://scontent.cdninstagram.com/audio.mp4": FakeStreamResponse(
+                "https://scontent.cdninstagram.com/audio.mp4",
+                content_type="audio/mp4",
+                content=b"audio-track",
+            ),
+        }
+        extra_candidates = [
+            {
+                "url": "https://scontent.cdninstagram.com/video.mp4",
+                "source": "network_response",
+                "media_kind": "video",
+                "content_type": "video/mp4",
+                "resource_type": "media",
+            },
+            {
+                "url": "https://scontent.cdninstagram.com/audio.mp4",
+                "source": "network_response",
+                "media_kind": "audio",
+                "content_type": "audio/mp4",
+                "resource_type": "media",
+            },
+        ]
+
+        def fake_ffmpeg_run(command, capture_output=True, text=True):
+            Path(command[-1]).write_bytes(b"muxed-video")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch("resources.services.httpx.Client", return_value=FakeHttpClient(responses)):
+            with patch("resources.services.get_ffprobe_executable", return_value="ffprobe"):
+                with patch(
+                    "resources.services.MediaProbe.probe_file",
+                    side_effect=[
+                        MediaProbeResult(has_video=True, has_audio=False, duration_sec=12.0),
+                        MediaProbeResult(has_video=False, has_audio=True, duration_sec=12.1),
+                        MediaProbeResult(has_video=True, has_audio=True, duration_sec=12.0),
+                    ],
+                ):
+                    with patch("resources.services.get_ffmpeg_executable", return_value="ffmpeg"):
+                        with patch("resources.services.subprocess.run", side_effect=fake_ffmpeg_run):
+                            result = download_video_assets(
+                                "https://www.instagram.com/reel/example/",
+                                "<html></html>",
+                                page_domain="instagram.com",
+                                extra_candidates=extra_candidates,
+                            )
+
+        self.assertEqual(result.extraction_status, "success")
+        self.assertEqual(result.extraction_strategy, "instagram_mux_ffmpeg")
+        self.assertEqual(len(result.assets), 1)
+        self.assertTrue(result.assets[0].metadata["has_video"])
+        self.assertTrue(result.assets[0].metadata["has_audio"])
+        self.assertEqual(result.attempts[-1]["mode"], "instagram_ffmpeg_mux")
+        self.assertEqual(result.summary["audio_only_count"], 1)
+
+    def test_download_video_assets_for_instagram_requires_ffprobe(self):
+        result = download_video_assets(
+            "https://www.instagram.com/reel/example/",
+            "<html></html>",
+            page_domain="instagram.com",
+            extra_candidates=[
+                {
+                    "url": "https://scontent.cdninstagram.com/video.mp4",
+                    "source": "network_response",
+                    "media_kind": "video",
+                    "content_type": "video/mp4",
+                    "resource_type": "media",
+                }
+            ],
+        )
+
+        self.assertEqual(result.extraction_status, "failed")
+        self.assertEqual(result.failure_reason, "ffprobe_required")
+        self.assertEqual(result.skip_logs[0]["reason"], "ffprobe_required")
+
+    def test_download_video_assets_for_instagram_logs_duration_mismatch_skip(self):
+        responses = {
+            "https://scontent.cdninstagram.com/video.mp4": FakeStreamResponse(
+                "https://scontent.cdninstagram.com/video.mp4",
+                content_type="video/mp4",
+                content=b"video-track",
+            ),
+            "https://scontent.cdninstagram.com/audio.mp4": FakeStreamResponse(
+                "https://scontent.cdninstagram.com/audio.mp4",
+                content_type="audio/mp4",
+                content=b"audio-track",
+            ),
+        }
+        extra_candidates = [
+            {
+                "url": "https://scontent.cdninstagram.com/video.mp4",
+                "source": "network_response",
+                "media_kind": "video",
+                "content_type": "video/mp4",
+                "resource_type": "media",
+            },
+            {
+                "url": "https://scontent.cdninstagram.com/audio.mp4",
+                "source": "network_response",
+                "media_kind": "audio",
+                "content_type": "audio/mp4",
+                "resource_type": "media",
+            },
+        ]
+
+        with patch("resources.services.httpx.Client", return_value=FakeHttpClient(responses)):
+            with patch("resources.services.get_ffprobe_executable", return_value="ffprobe"):
+                with patch(
+                    "resources.services.MediaProbe.probe_file",
+                    side_effect=[
+                        MediaProbeResult(has_video=True, has_audio=False, duration_sec=12.0),
+                        MediaProbeResult(has_video=False, has_audio=True, duration_sec=30.0),
+                    ],
+                ):
+                    result = download_video_assets(
+                        "https://www.instagram.com/reel/example/",
+                        "<html></html>",
+                        page_domain="instagram.com",
+                        extra_candidates=extra_candidates,
+                    )
+
+        self.assertEqual(result.extraction_status, "partial")
+        self.assertTrue(any(log["reason"] == "duration_mismatch" for log in result.skip_logs))
 
     def test_failed_capture_retries_and_records_failure_snapshot(self):
         enqueue_capture_job(self.resource)
