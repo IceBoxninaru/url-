@@ -4,7 +4,6 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 APP_DIR = ROOT_DIR / "app"
-CAPTURE_FFPROBE_PATH = os.getenv("CAPTURE_FFPROBE_PATH", "/usr/bin/ffprobe")
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -150,7 +149,7 @@ CAPTURE_MAX_IMAGES = int(os.getenv("CAPTURE_MAX_IMAGES", "8"))
 CAPTURE_MAX_IMAGE_BYTES = int(os.getenv("CAPTURE_MAX_IMAGE_BYTES", "8388608"))
 CAPTURE_MAX_VIDEOS = int(os.getenv("CAPTURE_MAX_VIDEOS", "4"))
 CAPTURE_MAX_VIDEO_BYTES = int(os.getenv("CAPTURE_MAX_VIDEO_BYTES", str(10 * 1024 * 1024 * 1024)))
-CAPTURE_FFPROBE_PATH = os.getenv("CAPTURE_FFPROBE_PATH", "").strip()
+CAPTURE_FFPROBE_PATH = os.getenv("CAPTURE_FFPROBE_PATH", "/usr/bin/ffprobe").strip()
 CAPTURE_VIDEO_DOMAINS = [
     item.strip().lower()
     for item in os.getenv(
