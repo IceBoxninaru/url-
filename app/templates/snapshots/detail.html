@@ -29,6 +29,7 @@
                 <dt>エラー</dt>
                 <dd>{{ snapshot.error_message|default:"-" }}</dd>
             </dl>
+            <p><strong>AI要約:</strong> {{ snapshot.ai_summary|default:"-" }}</p>
             {% if snapshot.has_translation %}
                 <p><strong>日本語訳:</strong> {{ snapshot.ai_translation }}</p>
             {% endif %}

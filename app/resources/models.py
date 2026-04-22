@@ -54,6 +54,7 @@ class ResourceQuerySet(models.QuerySet):
             + SearchVector("note", weight="C")
             + SearchVector("snapshots__extracted_text", weight="C")
             + SearchVector("snapshots__ai_summary", weight="B")
+            + SearchVector("snapshots__ai_translation", weight="B")
         )
         search_query = SearchQuery(query)
         return (
@@ -75,6 +76,7 @@ class ResourceQuerySet(models.QuerySet):
                 | Q(note__icontains=query)
                 | Q(snapshots__extracted_text__icontains=query)
                 | Q(snapshots__ai_summary__icontains=query)
+                | Q(snapshots__ai_translation__icontains=query)
             )
             .distinct()
             .order_by("-favorite", "-updated_at")
@@ -204,7 +206,13 @@ class Resource(models.Model):
 
     @property
     def latest_translation(self) -> str:
-        return self.latest_summary
+        if self.latest_snapshot:
+            return self.latest_snapshot.ai_translation
+        return ""
+
+    @property
+    def latest_ai_excerpt(self) -> str:
+        return self.latest_summary or self.latest_translation
 
     @property
     def latest_screenshot_path(self) -> str:

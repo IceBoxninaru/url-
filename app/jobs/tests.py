@@ -60,3 +60,4 @@ class AIJobIsolationTests(TestCase):
         snapshot.refresh_from_db()
         self.assertEqual(ai_job.status, JobStatus.RETRY_WAIT)
         self.assertEqual(snapshot.ai_summary, "")
+        self.assertEqual(snapshot.ai_translation, "")

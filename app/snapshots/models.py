@@ -24,6 +24,7 @@ class Snapshot(models.Model):
     og_image_url = models.URLField(max_length=2000, blank=True)
     extracted_text = models.TextField(blank=True)
     ai_summary = models.TextField(blank=True)
+    ai_translation = models.TextField(blank=True)
     ai_category = models.CharField(max_length=120, blank=True)
     ai_payload = models.JSONField(default=dict, blank=True)
     image_assets = models.JSONField(default=list, blank=True)
@@ -65,12 +66,12 @@ class Snapshot(models.Model):
         return len(self.video_assets or [])
 
     @property
-    def ai_translation(self) -> str:
-        return self.ai_summary
+    def has_summary(self) -> bool:
+        return bool(self.ai_summary.strip())
 
     @property
     def has_translation(self) -> bool:
-        return bool(self.ai_summary.strip())
+        return bool(self.ai_translation.strip())
 
     def get_absolute_url(self):
         return reverse("snapshots:detail", args=[self.pk])

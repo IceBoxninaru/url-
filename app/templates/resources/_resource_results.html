@@ -117,8 +117,8 @@
                             <td>
                                 <p>{{ resource.updated_at|date:"Y/m/d" }}</p>
                                 <p class="muted">{{ resource.updated_at|date:"H:i" }}</p>
-                                {% if resource.latest_translation %}
-                                    <p class="resource-table__summary">{{ resource.latest_translation|truncatechars:56 }}</p>
+                                {% if resource.latest_ai_excerpt %}
+                                    <p class="resource-table__summary">{{ resource.latest_ai_excerpt|truncatechars:56 }}</p>
                                 {% endif %}
                             </td>
                         </tr>

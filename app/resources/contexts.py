@@ -271,6 +271,7 @@ def build_resource_list_signature(resources) -> str:
             f"{resource.is_recheck_due}:"
             f"{resource.latest_snapshot_id or 0}:"
             f"{resource.search_only}:"
+            f"{resource.latest_summary}:"
             f"{resource.latest_translation}"
         )
         for resource in resources
