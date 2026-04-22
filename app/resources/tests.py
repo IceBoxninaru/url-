@@ -631,7 +631,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "日本語訳")
 
-    def test_detail_displays_saved_images_from_storage_directory(self):
+    def test_detail_displays_saved_images_from_latest_snapshot(self):
         resource = Resource.objects.create(
             original_url="https://example.com/image-post",
             normalized_url="https://example.com/image-post",
@@ -647,6 +647,14 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             fetch_method=FetchMethod.HTTP,
             http_status=200,
             page_title="Image",
+            image_assets=[
+                {
+                    "source_url": "https://example.com/hero.jpg",
+                    "path": f"storage/images/resource_{resource.id:04d}/snapshot_0001_img_01.jpg",
+                    "content_type": "image/jpeg",
+                    "size_bytes": 42,
+                }
+            ],
         )
         resource.latest_snapshot = snapshot
         resource.save(update_fields=["latest_snapshot"])
@@ -662,6 +670,61 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertContains(response, "保存した画像")
         self.assertContains(response, f"/storage/images/resource_{resource.id:04d}/{image_name}")
         self.assertFalse(response.context["capture_mismatch"])
+
+    def test_detail_displays_only_latest_snapshot_images(self):
+        resource = Resource.objects.create(
+            original_url="https://example.com/repeated-image-post",
+            normalized_url="https://example.com/repeated-image-post",
+            domain="example.com",
+            title_manual="Repeated Image Post",
+            capture_images=True,
+            capture_videos=False,
+        )
+        first_snapshot = Snapshot.objects.create(
+            resource=resource,
+            snapshot_no=1,
+            fetch_url=resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            page_title="First",
+            image_assets=[
+                {
+                    "source_url": "https://example.com/hero.jpg",
+                    "path": f"storage/images/resource_{resource.id:04d}/snapshot_0001_img_01.jpg",
+                    "content_type": "image/jpeg",
+                    "size_bytes": 42,
+                }
+            ],
+        )
+        second_snapshot = Snapshot.objects.create(
+            resource=resource,
+            snapshot_no=2,
+            fetch_url=resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            page_title="Second",
+            image_assets=[
+                {
+                    "source_url": "https://example.com/hero.jpg",
+                    "path": f"storage/images/resource_{resource.id:04d}/snapshot_0002_img_01.jpg",
+                    "content_type": "image/jpeg",
+                    "size_bytes": 42,
+                }
+            ],
+        )
+        resource.latest_snapshot = second_snapshot
+        resource.save(update_fields=["latest_snapshot"])
+        image_dir = self.storage_base / "images" / f"resource_{resource.id:04d}"
+        image_dir.mkdir(parents=True, exist_ok=True)
+        (image_dir / "snapshot_0001_img_01.jpg").write_bytes(b"first-image")
+        (image_dir / "snapshot_0002_img_01.jpg").write_bytes(b"second-image")
+
+        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+            response = self.client.get(reverse("resources:detail", args=[resource.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "/storage/images/resource_{0:04d}/snapshot_0002_img_01.jpg".format(resource.id))
+        self.assertNotContains(response, "/storage/images/resource_{0:04d}/snapshot_0001_img_01.jpg".format(resource.id))
 
     def test_detail_get_displays_checked_link_status(self):
         resource = Resource.objects.create(

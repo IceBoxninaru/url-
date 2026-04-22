@@ -1,6 +1,5 @@
 import hashlib
 
-from django.conf import settings
 from django.contrib import messages
 from django.http import HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -32,22 +31,7 @@ def build_snapshot_payload_context(snapshot):
 
 
 def build_resource_detail_context(resource, form=None):
-    image_names, video_names = get_capture_files(resource.pk)
-    storage_url = settings.STORAGE_URL.rstrip("/")
-    image_files = [
-        {
-            "name": image_name,
-            "path": f"{storage_url}/images/resource_{resource.pk:04d}/{image_name}",
-        }
-        for image_name in image_names
-    ]
-    video_files = [
-        {
-            "name": video_name,
-            "path": f"{storage_url}/videos/resource_{resource.pk:04d}/{video_name}",
-        }
-        for video_name in video_names
-    ]
+    image_files, video_files = get_capture_files(resource.latest_snapshot)
     return {
         "resource": resource,
         "form": form or ResourceForm(instance=resource),

@@ -216,27 +216,36 @@ def build_resource_directory(root: Path, resource_id: int) -> Path:
     return root / f"resource_{resource_id:04d}"
 
 
-def list_resource_files(root: Path, resource_id: int) -> list[str]:
-    resource_dir = build_resource_directory(root, resource_id)
-    if not resource_dir.exists() or not resource_dir.is_dir():
-        return []
-    return sorted(path.name for path in resource_dir.iterdir() if path.is_file())
+def resolve_storage_file_path(raw_path: str) -> Path:
+    candidate = Path(raw_path)
+    if not candidate.is_absolute():
+        candidate = settings.ROOT_DIR / candidate
+    return candidate
 
 
-def get_capture_files(
-    resource_id: int,
-    *,
-    image_root: Path | None = None,
-    video_root: Path | None = None,
-) -> tuple[list[str], list[str]]:
+def filter_existing_snapshot_assets(assets: list[dict] | None) -> list[dict]:
+    existing_assets: list[dict] = []
+    for asset in assets or []:
+        path = str(asset.get("path", "")).strip()
+        if not path:
+            continue
+        file_path = resolve_storage_file_path(path)
+        if file_path.exists() and file_path.is_file():
+            existing_assets.append(asset)
+    return existing_assets
+
+
+def get_capture_files(snapshot: Snapshot | None) -> tuple[list[dict], list[dict]]:
+    if snapshot is None:
+        return [], []
     return (
-        list_resource_files(image_root or settings.IMAGE_STORAGE_ROOT, resource_id),
-        list_resource_files(video_root or settings.VIDEO_STORAGE_ROOT, resource_id),
+        filter_existing_snapshot_assets(snapshot.image_assets),
+        filter_existing_snapshot_assets(snapshot.video_assets),
     )
 
 
-def sync_capture_flags(resource: Resource) -> tuple[list[str], list[str]]:
-    image_files, video_files = get_capture_files(resource.pk)
+def sync_capture_flags(resource: Resource) -> tuple[list[dict], list[dict]]:
+    image_files, video_files = get_capture_files(resource.latest_snapshot)
     resource.capture_images = bool(image_files)
     resource.capture_videos = bool(video_files)
     resource.save(update_fields=["capture_images", "capture_videos", "updated_at"])

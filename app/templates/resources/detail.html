@@ -127,8 +127,8 @@
                     <p><strong>保存した画像</strong></p>
                     <div class="image-gallery image-gallery--compact">
                         {% for image in image_files %}
-                            <a href="{{ image.path }}" target="_blank" rel="noreferrer" class="image-card">
-                                <img src="{{ image.path }}" alt="{{ image.name }}">
+                            <a href="/{{ image.path }}" target="_blank" rel="noreferrer" class="image-card">
+                                <img src="/{{ image.path }}" alt="Captured image {{ forloop.counter }}">
                             </a>
                         {% endfor %}
                     </div>
@@ -140,8 +140,8 @@
                     <p><strong>保存した動画</strong></p>
                     <div class="video-gallery video-gallery--compact">
                         {% for video in video_files %}
-                            <a href="{{ video.path }}" target="_blank" rel="noreferrer" class="video-card">
-                                <video src="{{ video.path }}" controls preload="metadata"></video>
+                            <a href="/{{ video.path }}" target="_blank" rel="noreferrer" class="video-card">
+                                <video src="/{{ video.path }}" controls preload="metadata"></video>
                             </a>
                         {% endfor %}
                     </div>
