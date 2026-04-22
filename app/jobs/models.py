@@ -16,6 +16,17 @@ class JobStatus(models.TextChoices):
     FAILED = "failed", "失敗"
 
 
+class CaptureJobQuerySet(models.QuerySet):
+    def due(self):
+        return self.filter(
+            status__in=[JobStatus.QUEUED, JobStatus.RETRY_WAIT],
+            scheduled_at__lte=timezone.now(),
+        )
+
+    def with_related(self):
+        return self.select_related("resource", "snapshot", "resource__latest_snapshot")
+
+
 class CaptureJob(models.Model):
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -43,6 +54,8 @@ class CaptureJob(models.Model):
     payload = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = CaptureJobQuerySet.as_manager()
 
     class Meta:
         ordering = ["-priority", "scheduled_at", "id"]

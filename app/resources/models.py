@@ -44,6 +44,55 @@ class ResourceQuerySet(models.QuerySet):
     def with_related(self):
         return self.select_related("latest_snapshot").prefetch_related("tags")
 
+    def _apply_postgresql_search(self, query: str):
+        vector = (
+            SearchVector("original_url", weight="A")
+            + SearchVector("title_manual", weight="B")
+            + SearchVector("domain", weight="B")
+            + SearchVector("save_reason", weight="B")
+            + SearchVector("next_action", weight="B")
+            + SearchVector("note", weight="C")
+            + SearchVector("snapshots__extracted_text", weight="C")
+            + SearchVector("snapshots__ai_summary", weight="B")
+        )
+        search_query = SearchQuery(query)
+        return (
+            self.annotate(search=vector, rank=SearchRank(vector, search_query))
+            .filter(search=search_query)
+            .order_by("-rank", "-favorite", "-updated_at")
+            .distinct()
+        )
+
+    def _apply_fallback_search(self, query: str):
+        return (
+            self.filter(
+                Q(original_url__icontains=query)
+                | Q(normalized_url__icontains=query)
+                | Q(title_manual__icontains=query)
+                | Q(domain__icontains=query)
+                | Q(save_reason__icontains=query)
+                | Q(next_action__icontains=query)
+                | Q(note__icontains=query)
+                | Q(snapshots__extracted_text__icontains=query)
+                | Q(snapshots__ai_summary__icontains=query)
+            )
+            .distinct()
+            .order_by("-favorite", "-updated_at")
+        )
+
+    def _apply_text_search(self, query: str):
+        if connection.vendor == "postgresql":
+            return self._apply_postgresql_search(query)
+        return self._apply_fallback_search(query)
+
+    def _apply_tag_filters(self, tag_ids: list[int] | None):
+        queryset = self
+        for tag_id in dict.fromkeys(tag_ids or []):
+            queryset = queryset.filter(tags__id=tag_id)
+        if tag_ids:
+            queryset = queryset.distinct()
+        return queryset
+
     def apply_filters(
         self,
         *,
@@ -59,49 +108,13 @@ class ResourceQuerySet(models.QuerySet):
         queryset = self.with_related()
         query = (query or "").strip()
         if query:
-            if connection.vendor == "postgresql":
-                vector = (
-                    SearchVector("original_url", weight="A")
-                    + SearchVector("title_manual", weight="B")
-                    + SearchVector("domain", weight="B")
-                    + SearchVector("save_reason", weight="B")
-                    + SearchVector("next_action", weight="B")
-                    + SearchVector("note", weight="C")
-                    + SearchVector("snapshots__extracted_text", weight="C")
-                    + SearchVector("snapshots__ai_summary", weight="B")
-                )
-                search_query = SearchQuery(query)
-                queryset = (
-                    queryset.annotate(search=vector, rank=SearchRank(vector, search_query))
-                    .filter(search=search_query)
-                    .order_by("-rank", "-favorite", "-updated_at")
-                    .distinct()
-                )
-            else:
-                queryset = (
-                    queryset.filter(
-                        Q(original_url__icontains=query)
-                        | Q(normalized_url__icontains=query)
-                        | Q(title_manual__icontains=query)
-                        | Q(domain__icontains=query)
-                        | Q(save_reason__icontains=query)
-                        | Q(next_action__icontains=query)
-                        | Q(note__icontains=query)
-                        | Q(snapshots__extracted_text__icontains=query)
-                        | Q(snapshots__ai_summary__icontains=query)
-                    )
-                    .distinct()
-                    .order_by("-favorite", "-updated_at")
-                )
+            queryset = queryset._apply_text_search(query)
         else:
             queryset = queryset.exclude(search_only=True).order_by("-favorite", "-updated_at")
 
         if domain:
             queryset = queryset.filter(domain=domain)
-        if tag_ids:
-            for tag_id in dict.fromkeys(tag_ids):
-                queryset = queryset.filter(tags__id=tag_id)
-            queryset = queryset.distinct()
+        queryset = queryset._apply_tag_filters(tag_ids)
         if favorite_only:
             queryset = queryset.filter(favorite=True)
         if status:

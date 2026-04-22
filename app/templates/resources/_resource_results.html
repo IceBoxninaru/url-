@@ -5,65 +5,25 @@
     data-resource-signature="{{ resource_signature }}"
     data-resource-poll-ms="{{ resource_poll_ms }}"
 >
+    <form method="get" action="{% url 'resources:bulk_edit' %}" id="resource-selection-form">
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    </form>
     <div class="panel-header">
         <h2>URL一覧</h2>
         <div class="panel-header__actions">
             <span>{{ resource_count }} 件</span>
             <span class="live-indicator" data-autorefresh-status>自動更新中</span>
+            <button type="submit" form="resource-selection-form" data-resource-bulk-open-button>まとめて編集</button>
         </div>
     </div>
-    <form method="post" action="{% url 'resources:bulk_edit' %}" id="resource-bulk-form" class="bulk-edit-form">
-        {% csrf_token %}
-        <input type="hidden" name="next" value="{{ request.get_full_path }}">
-        <div class="bulk-edit-form__summary">
-            <label class="checkbox-chip">
-                <input type="checkbox" data-resource-select-all>
-                <span>一覧をまとめて選択</span>
-            </label>
-            <span class="muted" data-resource-selected-count>0 件選択中</span>
-        </div>
-        <div class="bulk-edit-form__grid">
-            <label>
-                <span class="filter-label">見直し状態</span>
-                {{ bulk_form.review_state }}
-            </label>
-            <label>
-                <span class="filter-label">保存理由</span>
-                {{ bulk_form.save_reason }}
-            </label>
-            <label>
-                <span class="filter-label">次の行動</span>
-                {{ bulk_form.next_action }}
-            </label>
-            <label>
-                <span class="filter-label">再確認日</span>
-                {{ bulk_form.recheck_at }}
-            </label>
-            <label>
-                <span class="filter-label">お気に入り</span>
-                {{ bulk_form.favorite_state }}
-            </label>
-            <label>
-                <span class="filter-label">一覧表示</span>
-                {{ bulk_form.visibility_state }}
-            </label>
-            <label class="bulk-edit-form__full">
-                <span class="filter-label">追加タグ</span>
-                {{ bulk_form.tags }}
-            </label>
-            <label class="bulk-edit-form__full">
-                <span class="filter-label">新しいタグを追加</span>
-                {{ bulk_form.new_tags }}
-            </label>
-        </div>
-        <label class="checkbox-chip checkbox-chip--inline">
-            {{ bulk_form.clear_recheck_at }}
-            <span>再確認日をクリア</span>
+    <div class="bulk-selection-summary">
+        <label class="checkbox-chip">
+            <input type="checkbox" data-resource-select-all>
+            <span>一覧をまとめて選択</span>
         </label>
-        <div class="action-row action-row--start">
-            <button type="submit">選択したURLに適用</button>
-        </div>
-    </form>
+        <span class="muted" data-resource-selected-count>0 件選択中</span>
+        <span class="muted">選択後に右上の「まとめて編集」へ進みます。</span>
+    </div>
     <div class="resource-list resource-list--compact">
         {% for resource in resources %}
             <article class="resource-card resource-card--compact {% if resource.latest_screenshot_path %}resource-card--with-preview{% endif %}">
@@ -78,7 +38,7 @@
                     <div class="resource-card__title-main">
                         <input
                             type="checkbox"
-                            form="resource-bulk-form"
+                            form="resource-selection-form"
                             name="resource_ids"
                             value="{{ resource.id }}"
                             data-resource-select-checkbox

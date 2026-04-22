@@ -10,16 +10,18 @@ from django.utils import timezone
 from jobs.models import CaptureJob, JobStatus, JobType
 from resources.services import execute_ai_job, execute_capture_job
 
+JOB_EXECUTORS = {
+    JobType.CAPTURE: execute_capture_job,
+    JobType.AI_ENRICH: execute_ai_job,
+}
+
+
+def save_job(job: CaptureJob, *field_names: str) -> None:
+    job.save(update_fields=[*field_names, "updated_at"])
+
 
 def due_jobs_queryset():
-    return (
-        CaptureJob.objects
-        .filter(
-            status__in=[JobStatus.QUEUED, JobStatus.RETRY_WAIT],
-            scheduled_at__lte=timezone.now(),
-        )
-        .order_by("-priority", "scheduled_at", "id")
-    )
+    return CaptureJob.objects.due().order_by("-priority", "scheduled_at", "id")
 
 
 def claim_next_job() -> CaptureJob | None:
@@ -37,18 +39,15 @@ def claim_next_job() -> CaptureJob | None:
         job.finished_at = None
         job.attempt_count += 1
         job.error_message = ""
-        job.save(update_fields=["status", "started_at", "finished_at", "attempt_count", "error_message", "updated_at"])
-        return (
-            CaptureJob.objects.select_related("resource", "snapshot", "resource__latest_snapshot")
-            .get(pk=job.pk)
-        )
+        save_job(job, "status", "started_at", "finished_at", "attempt_count", "error_message")
+        return CaptureJob.objects.with_related().get(pk=job.pk)
 
 
 def complete_job(job: CaptureJob):
     job.status = JobStatus.SUCCEEDED
     job.finished_at = timezone.now()
     job.error_message = ""
-    job.save(update_fields=["status", "finished_at", "error_message", "updated_at"])
+    save_job(job, "status", "finished_at", "error_message")
 
 
 def fail_or_retry_job(job: CaptureJob, message: str):
@@ -62,17 +61,14 @@ def fail_or_retry_job(job: CaptureJob, message: str):
         job.status = JobStatus.FAILED
     job.finished_at = timezone.now()
     job.error_message = message
-    job.save(update_fields=["status", "scheduled_at", "finished_at", "error_message", "updated_at"])
+    save_job(job, "status", "scheduled_at", "finished_at", "error_message")
 
 
 def run_job(job: CaptureJob):
-    if job.job_type == JobType.CAPTURE:
-        execute_capture_job(job)
-        return
-    if job.job_type == JobType.AI_ENRICH:
-        execute_ai_job(job)
-        return
-    raise ValueError(f"Unsupported job type: {job.job_type}")
+    executor = JOB_EXECUTORS.get(job.job_type)
+    if executor is None:
+        raise ValueError(f"Unsupported job type: {job.job_type}")
+    executor(job)
 
 
 def run_one_job() -> bool:

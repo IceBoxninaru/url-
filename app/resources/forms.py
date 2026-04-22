@@ -1,40 +1,35 @@
 from __future__ import annotations
 
-import re
-
 from django import forms
 from django.db import transaction
 
 from resources.models import Resource, ResourceStatus, ReviewState, SaveReason
 from resources.services import normalize_url
+from resources.tagging import (
+    ordered_tags_queryset,
+    parse_new_tag_names,
+    resolve_tags as resolve_tag_selection,
+)
 from tags.models import Tag
 
 NOTE_TEMPLATE_CHOICES = list(SaveReason.choices)
 
-NEW_TAG_SPLIT_RE = re.compile(r"[\n,、]+")
+
+class TagSelectionFormMixin:
+    def configure_tag_field(self) -> None:
+        self.fields["tags"].queryset = ordered_tags_queryset()
+
+    def clean_new_tags(self) -> list[str]:
+        return parse_new_tag_names(self.cleaned_data.get("new_tags", ""))
+
+    def resolve_tags(self) -> list[Tag]:
+        return resolve_tag_selection(
+            self.cleaned_data.get("tags") or [],
+            self.cleaned_data.get("new_tags") or [],
+        )
 
 
-def parse_new_tag_names(raw_value: str) -> list[str]:
-    if not raw_value:
-        return []
-
-    max_length = Tag._meta.get_field("name").max_length
-    normalized_names: list[str] = []
-    seen_names: set[str] = set()
-    for candidate in NEW_TAG_SPLIT_RE.split(raw_value):
-        name = candidate.strip()
-        if not name:
-            continue
-        if len(name) > max_length:
-            raise forms.ValidationError(f"タグ名は {max_length} 文字以内で入力してください。")
-        key = name.casefold()
-        if key not in seen_names:
-            seen_names.add(key)
-            normalized_names.append(name)
-    return normalized_names
-
-
-class ResourceForm(forms.ModelForm):
+class ResourceForm(TagSelectionFormMixin, forms.ModelForm):
     save_reason = forms.ChoiceField(
         required=False,
         choices=[("", "選択なし")] + NOTE_TEMPLATE_CHOICES,
@@ -105,7 +100,7 @@ class ResourceForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.existing_resource: Resource | None = None
-        self.fields["tags"].queryset = Tag.objects.all().order_by("sort_order", "name")
+        self.configure_tag_field()
         self.fields["favorite"].label = "お気に入りにする"
         self.fields["search_only"].help_text = "オンにすると通常の一覧では隠れ、検索入力時だけ表示されます。"
         self.fields["capture_images"].help_text = "オフにすると画像ファイルを保存しません。"
@@ -158,24 +153,6 @@ class ResourceForm(forms.ModelForm):
             raise forms.ValidationError("このURLは登録済みです。")
 
         return original_url
-
-    def clean_new_tags(self) -> list[str]:
-        raw_value = self.cleaned_data.get("new_tags", "")
-        return parse_new_tag_names(raw_value)
-
-    def resolve_tags(self) -> list[Tag]:
-        resolved_tags = list(self.cleaned_data.get("tags") or [])
-        existing_names = {tag.name.casefold(): tag for tag in resolved_tags}
-        for name in self.cleaned_data.get("new_tags") or []:
-            key = name.casefold()
-            if key in existing_names:
-                continue
-            tag = Tag.objects.filter(name__iexact=name).first()
-            if tag is None:
-                tag = Tag.objects.create(name=name)
-            existing_names[key] = tag
-            resolved_tags.append(tag)
-        return resolved_tags
 
     def save(self, commit=True):
         resource = super().save(commit=False)
@@ -240,7 +217,7 @@ class ResourceFilterForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["tags"].queryset = Tag.objects.all().order_by("sort_order", "name")
+        self.fields["tags"].queryset = ordered_tags_queryset()
         domains = (
             Resource.objects.exclude(domain="")
             .order_by("domain")
@@ -250,7 +227,7 @@ class ResourceFilterForm(forms.Form):
         self.fields["domain"].choices = [("", "すべて")] + [(domain, domain) for domain in domains]
 
 
-class ResourceBulkEditForm(forms.Form):
+class ResourceBulkEditForm(TagSelectionFormMixin, forms.Form):
     review_state = forms.ChoiceField(
         required=False,
         choices=[("", "変更しない")] + list(ReviewState.choices),
@@ -310,10 +287,7 @@ class ResourceBulkEditForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["tags"].queryset = Tag.objects.all().order_by("sort_order", "name")
-
-    def clean_new_tags(self) -> list[str]:
-        return parse_new_tag_names(self.cleaned_data.get("new_tags", ""))
+        self.configure_tag_field()
 
     def clean(self):
         cleaned_data = super().clean()
@@ -335,20 +309,6 @@ class ResourceBulkEditForm(forms.Form):
         if not has_updates:
             raise forms.ValidationError("一括操作の内容を1つ以上指定してください。")
         return cleaned_data
-
-    def resolve_tags(self) -> list[Tag]:
-        resolved_tags = list(self.cleaned_data.get("tags") or [])
-        existing_names = {tag.name.casefold(): tag for tag in resolved_tags}
-        for name in self.cleaned_data.get("new_tags") or []:
-            key = name.casefold()
-            if key in existing_names:
-                continue
-            tag = Tag.objects.filter(name__iexact=name).first()
-            if tag is None:
-                tag = Tag.objects.create(name=name)
-            existing_names[key] = tag
-            resolved_tags.append(tag)
-        return resolved_tags
 
     def apply_to_resources(self, resources) -> int:
         selected_resources = list(resources)

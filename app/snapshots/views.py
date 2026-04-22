@@ -1,23 +1,11 @@
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_GET
 
-from resources.models import Resource
-from resources.services import build_snapshot_diff_context
+from resources.contexts import build_snapshot_detail_context
 from snapshots.models import Snapshot
 
 
 @require_GET
 def snapshot_detail(request, pk: int):
     snapshot = get_object_or_404(Snapshot.objects.select_related("resource"), pk=pk)
-    payload = snapshot.ai_payload or {}
-    similar_resources = Resource.objects.filter(id__in=payload.get("similar_resource_ids", [])).select_related("latest_snapshot")
-    return render(
-        request,
-        "snapshots/detail.html",
-        {
-            "snapshot": snapshot,
-            "tag_candidates": payload.get("tag_candidates", []),
-            "similar_resources": similar_resources,
-            "snapshot_diff": build_snapshot_diff_context(snapshot),
-        },
-    )
+    return render(request, "snapshots/detail.html", build_snapshot_detail_context(snapshot))

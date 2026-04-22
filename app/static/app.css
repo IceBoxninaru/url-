@@ -319,6 +319,18 @@ a {
     background: rgba(255, 255, 255, 0.78);
 }
 
+.bulk-edit-form--page {
+    margin: 0;
+}
+
+.bulk-selection-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 16px;
+}
+
 .bulk-edit-form__summary {
     display: flex;
     flex-wrap: wrap;
@@ -436,6 +448,11 @@ button {
     font-weight: 700;
     font: inherit;
     cursor: pointer;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
 }
 
 button.danger {
@@ -616,6 +633,27 @@ button.danger {
     color: var(--muted);
     font-size: 0.92rem;
     line-height: 1.45;
+}
+
+.bulk-selection-list {
+    display: grid;
+    gap: 10px;
+}
+
+.bulk-selection-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: start;
+    padding: 14px 16px;
+    border: 1px solid rgba(31, 36, 48, 0.08);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.bulk-selection-item h3,
+.bulk-selection-item p {
+    margin: 0;
 }
 
 .tag-row--compact {
@@ -939,6 +977,10 @@ button.danger {
     .action-row {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .bulk-selection-item {
+        grid-template-columns: 1fr;
     }
 
     .filter-toolbar__primary {

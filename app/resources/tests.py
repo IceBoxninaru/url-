@@ -640,6 +640,40 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertFalse(resource_c.search_only)
         self.assertFalse(resource_c.tags.exists())
 
+    def test_bulk_edit_page_shows_selected_resources(self):
+        resource_a = Resource.objects.create(
+            original_url="https://example.com/bulk-page-a",
+            normalized_url="https://example.com/bulk-page-a",
+            domain="example.com",
+            title_manual="Bulk Page A",
+        )
+        resource_b = Resource.objects.create(
+            original_url="https://example.com/bulk-page-b",
+            normalized_url="https://example.com/bulk-page-b",
+            domain="example.com",
+            title_manual="Bulk Page B",
+        )
+
+        response = self.client.get(
+            reverse("resources:bulk_edit"),
+            {
+                "resource_ids": [str(resource_a.id), str(resource_b.id)],
+                "next": reverse("resources:list"),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "まとめて編集")
+        self.assertContains(response, "Bulk Page A")
+        self.assertContains(response, "Bulk Page B")
+        self.assertContains(response, 'name="resource_ids"', html=False)
+
+    def test_bulk_edit_page_requires_selection(self):
+        response = self.client.get(reverse("resources:bulk_edit"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], reverse("resources:list"))
+
     def test_list_fragment_returns_html_and_signature(self):
         resource = Resource.objects.create(
             original_url="https://example.com/live",

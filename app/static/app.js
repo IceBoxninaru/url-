@@ -25,6 +25,7 @@ function initResourceAutoRefresh() {
     const checkedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
     const countNode = currentPanel?.querySelector("[data-resource-selected-count]");
     const selectAllNode = currentPanel?.querySelector("[data-resource-select-all]");
+    const bulkOpenButton = currentPanel?.querySelector("[data-resource-bulk-open-button]");
 
     if (countNode) {
       countNode.textContent = `${checkedCount} 件選択中`;
@@ -32,6 +33,9 @@ function initResourceAutoRefresh() {
     if (selectAllNode) {
       selectAllNode.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
       selectAllNode.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+    }
+    if (bulkOpenButton instanceof HTMLButtonElement) {
+      bulkOpenButton.disabled = checkedCount === 0;
     }
   };
 

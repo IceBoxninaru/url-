@@ -223,15 +223,52 @@ def resolve_storage_file_path(raw_path: str) -> Path:
     return candidate
 
 
-def filter_existing_snapshot_assets(assets: list[dict] | None) -> list[dict]:
+def build_storage_asset_path(storage_root: Path, resource_id: int, filename: str) -> str:
+    return (Path("storage") / Path(storage_root).name / f"resource_{resource_id:04d}" / filename).as_posix()
+
+
+def resolve_asset_file_path(
+    raw_path: str,
+    storage_root: Path | None = None,
+    *,
+    resource_id: int | None = None,
+) -> tuple[Path, str | None]:
+    candidate = resolve_storage_file_path(raw_path)
+    if candidate.exists():
+        return candidate, None
+
+    if storage_root is None:
+        return candidate, None
+
+    fallback_paths: list[Path] = []
+    relative_path = Path(raw_path)
+    if resource_id is not None and relative_path.name:
+        fallback_paths.append(build_resource_directory(Path(storage_root), resource_id) / relative_path.name)
+    if len(relative_path.parts) >= 2:
+        fallback_paths.append(Path(storage_root).joinpath(*relative_path.parts[-2:]))
+    for fallback in fallback_paths:
+        if fallback.exists():
+            display_path = None
+            if resource_id is not None and fallback.name:
+                display_path = build_storage_asset_path(Path(storage_root), resource_id, fallback.name)
+            return fallback, display_path
+    return candidate, None
+
+
+def filter_existing_snapshot_assets(
+    assets: list[dict] | None,
+    *,
+    storage_root: Path | None = None,
+    resource_id: int | None = None,
+) -> list[dict]:
     existing_assets: list[dict] = []
     for asset in assets or []:
         path = str(asset.get("path", "")).strip()
         if not path:
             continue
-        file_path = resolve_storage_file_path(path)
+        file_path, display_path = resolve_asset_file_path(path, storage_root, resource_id=resource_id)
         if file_path.exists() and file_path.is_file():
-            existing_assets.append(asset)
+            existing_assets.append({**asset, "path": display_path or path})
     return existing_assets
 
 
@@ -239,8 +276,16 @@ def get_capture_files(snapshot: Snapshot | None) -> tuple[list[dict], list[dict]
     if snapshot is None:
         return [], []
     return (
-        filter_existing_snapshot_assets(snapshot.image_assets),
-        filter_existing_snapshot_assets(snapshot.video_assets),
+        filter_existing_snapshot_assets(
+            snapshot.image_assets,
+            storage_root=settings.IMAGE_STORAGE_ROOT,
+            resource_id=snapshot.resource_id,
+        ),
+        filter_existing_snapshot_assets(
+            snapshot.video_assets,
+            storage_root=settings.VIDEO_STORAGE_ROOT,
+            resource_id=snapshot.resource_id,
+        ),
     )
 
 

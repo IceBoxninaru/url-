@@ -6,5 +6,5 @@ from jobs.models import CaptureJob
 
 @require_GET
 def job_list(request):
-    jobs = CaptureJob.objects.select_related("resource", "snapshot").all()[:200]
+    jobs = CaptureJob.objects.with_related()[:200]
     return render(request, "jobs/list.html", {"jobs": jobs})
