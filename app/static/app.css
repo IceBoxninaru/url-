@@ -967,10 +967,17 @@ input[type="checkbox"] {
     font-weight: 700;
 }
 
-.resource-table__url,
 .resource-table__summary {
     overflow-wrap: anywhere;
     word-break: break-word;
+}
+
+.resource-table__url {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .resource-table__actions {
