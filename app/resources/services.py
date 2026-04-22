@@ -65,6 +65,8 @@ TRANSLATION_MAX_SOURCE_CHARS = 1600
 TRANSLATION_MAX_CHUNK_CHARS = 400
 TRANSLATION_ENDPOINT = "https://translate.googleapis.com/translate_a/single"
 SUMMARY_MAX_SEGMENTS = 4
+SUMMARY_TARGET_MAX_CHARS = 180
+SUMMARY_DISTINCT_MAX_CHARS = 100
 
 
 @dataclass
@@ -2660,8 +2662,21 @@ def split_text_into_sentences(text: str) -> list[str]:
     return sentences or [normalized]
 
 
+def truncate_summary_text(text: str, max_chars: int) -> str:
+    normalized = normalize_ai_text(text)
+    if len(normalized) <= max_chars:
+        return normalized
+    return f"{normalized[: max_chars - 1].rstrip()}…"
+
+
 def build_summary_text(snapshot: Snapshot) -> str:
-    max_chars = max(80, int(getattr(settings, "AI_SUMMARY_MAX_CHARS", 320)))
+    max_chars = max(
+        80,
+        min(
+            int(getattr(settings, "AI_SUMMARY_MAX_CHARS", 320)),
+            SUMMARY_TARGET_MAX_CHARS,
+        ),
+    )
     segments: list[str] = []
     seen: set[str] = set()
 
@@ -2677,24 +2692,56 @@ def build_summary_text(snapshot: Snapshot) -> str:
 
     push(snapshot.page_title)
     push(snapshot.og_description)
-    for sentence in split_text_into_sentences(snapshot.extracted_text):
-        push(sentence)
-        if len(segments) >= 8:
-            break
+
+    body_sentences = split_text_into_sentences(snapshot.extracted_text)
+    if body_sentences:
+        push(body_sentences[0])
+    if len(segments) < 2 and len(body_sentences) > 1:
+        push(body_sentences[1])
 
     summary_parts: list[str] = []
     for segment in segments:
         candidate = normalize_ai_text(" ".join([*summary_parts, segment]))
         if len(candidate) <= max_chars:
             summary_parts.append(segment)
-            if len(summary_parts) >= SUMMARY_MAX_SEGMENTS and len(candidate) >= min(max_chars, 120):
+            if len(summary_parts) >= min(SUMMARY_MAX_SEGMENTS, 2):
                 break
             continue
         if summary_parts:
             break
-        truncated = segment[: max_chars - 1].rstrip()
-        return f"{truncated}…" if len(segment) > max_chars else segment
+        return truncate_summary_text(segment, max_chars)
     return normalize_ai_text(" ".join(summary_parts))
+
+
+def ensure_summary_is_distinct(summary: str, translation: str, snapshot: Snapshot) -> str:
+    normalized_summary = normalize_ai_text(summary)
+    normalized_translation = normalize_ai_text(translation)
+    if not normalized_summary or not normalized_translation:
+        return normalized_summary
+    if normalized_summary != normalized_translation:
+        return normalized_summary
+
+    title = normalize_ai_text(snapshot.page_title)
+    if title and is_probably_japanese_text(title) and title.casefold() != normalized_translation.casefold():
+        return truncate_summary_text(title, SUMMARY_DISTINCT_MAX_CHARS)
+
+    description = normalize_ai_text(snapshot.og_description)
+    if (
+        description
+        and is_probably_japanese_text(description)
+        and description.casefold() != normalized_translation.casefold()
+    ):
+        return truncate_summary_text(description, SUMMARY_DISTINCT_MAX_CHARS)
+
+    summary_clauses = [part.strip() for part in re.split(r"[、,;:：]", normalized_summary) if part.strip()]
+    if summary_clauses:
+        candidate = truncate_summary_text(summary_clauses[0], SUMMARY_DISTINCT_MAX_CHARS)
+        if candidate and normalize_ai_text(candidate) != normalized_translation:
+            return candidate
+
+    if len(normalized_summary) > SUMMARY_DISTINCT_MAX_CHARS:
+        return truncate_summary_text(normalized_summary, SUMMARY_DISTINCT_MAX_CHARS)
+    return f"要点: {normalized_summary}"
 
 
 def build_translation_source_text(snapshot: Snapshot) -> str:
@@ -2891,6 +2938,7 @@ def run_ai_pipeline(snapshot: Snapshot) -> AIResult:
                 summary_meta["summary_error_message"] = translated_summary_meta["error_message"]
 
     translation, translation_meta = translate_text_to_japanese(build_translation_source_text(snapshot))
+    summary = ensure_summary_is_distinct(summary, translation, snapshot)
     category = infer_category(snapshot)
     payload = {
         **base_payload,

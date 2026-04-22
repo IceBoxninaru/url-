@@ -1281,6 +1281,28 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         self.assertEqual(result.payload["translation_status"], "source_already_japanese")
         self.assertEqual(result.payload["translation_detected_language"], "ja")
 
+    def test_run_ai_pipeline_avoids_identical_summary_and_translation(self):
+        snapshot = Snapshot(
+            resource=self.resource,
+            snapshot_no=1,
+            fetch_url=self.resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            extracted_text="Only one sentence.",
+            page_title="English article",
+        )
+
+        with patch(
+            "resources.services.translate_text_to_japanese",
+            side_effect=[
+                ("これは同じ文です。", {"translation_status": "translated", "detected_language": "en"}),
+                ("これは同じ文です。", {"translation_status": "translated", "detected_language": "en"}),
+            ],
+        ):
+            result = run_ai_pipeline(snapshot)
+
+        self.assertEqual(result.translation, "これは同じ文です。")
+        self.assertEqual(result.summary, "要点: これは同じ文です。")
+
     def test_capture_success_persists_downloaded_images(self):
         enqueue_capture_job(self.resource)
         capture_result = CaptureResult(
