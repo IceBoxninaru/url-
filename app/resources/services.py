@@ -216,6 +216,33 @@ def build_resource_directory(root: Path, resource_id: int) -> Path:
     return root / f"resource_{resource_id:04d}"
 
 
+def list_resource_files(root: Path, resource_id: int) -> list[str]:
+    resource_dir = build_resource_directory(root, resource_id)
+    if not resource_dir.exists() or not resource_dir.is_dir():
+        return []
+    return sorted(path.name for path in resource_dir.iterdir() if path.is_file())
+
+
+def get_capture_files(
+    resource_id: int,
+    *,
+    image_root: Path | None = None,
+    video_root: Path | None = None,
+) -> tuple[list[str], list[str]]:
+    return (
+        list_resource_files(image_root or settings.IMAGE_STORAGE_ROOT, resource_id),
+        list_resource_files(video_root or settings.VIDEO_STORAGE_ROOT, resource_id),
+    )
+
+
+def sync_capture_flags(resource: Resource) -> tuple[list[str], list[str]]:
+    image_files, video_files = get_capture_files(resource.pk)
+    resource.capture_images = bool(image_files)
+    resource.capture_videos = bool(video_files)
+    resource.save(update_fields=["capture_images", "capture_videos", "updated_at"])
+    return image_files, video_files
+
+
 def write_storage_file(root: Path, resource_id: int, filename: str, content, binary: bool = False) -> str:
     resource_dir = build_resource_directory(root, resource_id)
     resource_dir.mkdir(parents=True, exist_ok=True)
@@ -2691,6 +2718,7 @@ def execute_capture_job(job: CaptureJob) -> Snapshot:
             resource.latest_snapshot = snapshot
             resource.current_status = status_from_snapshot(snapshot)
             resource.save(update_fields=["normalized_url", "domain", "latest_snapshot", "current_status", "updated_at"])
+            sync_capture_flags(resource)
         if resource.current_status == ResourceStatus.FETCH_FAILED:
             raise RuntimeError(snapshot.error_message or "Capture failed.")
         if snapshot.is_success:

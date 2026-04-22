@@ -631,6 +631,38 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "日本語訳")
 
+    def test_detail_displays_saved_images_from_storage_directory(self):
+        resource = Resource.objects.create(
+            original_url="https://example.com/image-post",
+            normalized_url="https://example.com/image-post",
+            domain="example.com",
+            title_manual="Image Post",
+            capture_images=True,
+            capture_videos=False,
+        )
+        snapshot = Snapshot.objects.create(
+            resource=resource,
+            snapshot_no=1,
+            fetch_url=resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            page_title="Image",
+        )
+        resource.latest_snapshot = snapshot
+        resource.save(update_fields=["latest_snapshot"])
+        image_name = "snapshot_0001_img_01.jpg"
+        image_dir = self.storage_base / "images" / f"resource_{resource.id:04d}"
+        image_dir.mkdir(parents=True, exist_ok=True)
+        (image_dir / image_name).write_bytes(b"fake-image-bytes")
+
+        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+            response = self.client.get(reverse("resources:detail", args=[resource.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "保存した画像")
+        self.assertContains(response, f"/storage/images/resource_{resource.id:04d}/{image_name}")
+        self.assertFalse(response.context["capture_mismatch"])
+
     def test_detail_get_displays_checked_link_status(self):
         resource = Resource.objects.create(
             original_url="https://example.com/link-check",
@@ -658,6 +690,8 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             normalized_url="https://x.com/example/status/1",
             domain="x.com",
             title_manual="Video Post",
+            capture_images=False,
+            capture_videos=True,
         )
         snapshot = Snapshot.objects.create(
             resource=resource,
@@ -677,13 +711,53 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         )
         resource.latest_snapshot = snapshot
         resource.save(update_fields=["latest_snapshot"])
+        video_name = "snapshot_0001_vid_01.mp4"
+        video_dir = self.storage_base / "videos" / f"resource_{resource.id:04d}"
+        video_dir.mkdir(parents=True, exist_ok=True)
+        (video_dir / video_name).write_bytes(b"fake-video-bytes")
 
         with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
             response = self.client.get(reverse("resources:detail", args=[resource.id]))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "保存動画")
-        self.assertContains(response, snapshot.video_assets[0]["path"])
+        self.assertContains(response, f"/storage/videos/resource_{resource.id:04d}/{video_name}")
+
+    def test_detail_prompts_recapture_when_capture_flag_and_files_are_out_of_sync(self):
+        resource = Resource.objects.create(
+            original_url="https://example.com/mismatch",
+            normalized_url="https://example.com/mismatch",
+            domain="example.com",
+            title_manual="Mismatch Entry",
+            capture_images=True,
+            capture_videos=False,
+        )
+        snapshot = Snapshot.objects.create(
+            resource=resource,
+            snapshot_no=1,
+            fetch_url=resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            page_title="Mismatch",
+            image_assets=[
+                {
+                    "source_url": "https://example.com/hero.jpg",
+                    "path": f"storage/images/resource_{resource.id:04d}/snapshot_0001_img_01.jpg",
+                    "content_type": "image/jpeg",
+                    "size_bytes": 42,
+                }
+            ],
+        )
+        resource.latest_snapshot = snapshot
+        resource.save(update_fields=["latest_snapshot"])
+
+        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+            response = self.client.get(reverse("resources:detail", args=[resource.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "保存済みファイルが見つかりません。再取得してください。")
+        self.assertNotContains(response, "保存した画像")
+        self.assertTrue(response.context["capture_mismatch"])
 
     def test_post_link_check_redirects_after_refresh(self):
         resource = Resource.objects.create(
@@ -869,6 +943,44 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         video_path = settings.ROOT_DIR / snapshot.video_assets[0]["path"]
         self.assertTrue(video_path.exists())
         self.assertFalse(temp_path.exists())
+
+    def test_capture_success_syncs_capture_flags_from_saved_files(self):
+        self.resource.capture_images = False
+        self.resource.capture_videos = False
+        self.resource.save(update_fields=["capture_images", "capture_videos"])
+        enqueue_capture_job(self.resource)
+        temp_path, size_bytes = self.create_temp_video()
+        capture_result = CaptureResult(
+            fetch_url="https://example.com/article",
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            html="<html><body>Captured</body></html>",
+            extracted_text="Captured body",
+            metadata={"page_title": "Captured"},
+            response_payload={"status_code": 200},
+            captured_images=[
+                CapturedImage(
+                    source_url="https://example.com/hero.jpg",
+                    content=b"fake-image-bytes",
+                    content_type="image/jpeg",
+                )
+            ],
+            captured_videos=[
+                CapturedVideo(
+                    source_url="https://cdn.example.com/video.mp4",
+                    temp_path=temp_path,
+                    size_bytes=size_bytes,
+                    content_type="video/mp4",
+                )
+            ],
+        )
+
+        with patch("resources.services.choose_capture_result", return_value=capture_result):
+            self.assertTrue(run_one_job())
+
+        self.resource.refresh_from_db()
+        self.assertTrue(self.resource.capture_images)
+        self.assertTrue(self.resource.capture_videos)
 
     def test_capture_success_persists_downloaded_video_metadata(self):
         self.resource.domain = "instagram.com"
@@ -1096,6 +1208,8 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         self.resource.refresh_from_db()
         self.assertEqual(snapshot.error_message, "timeout")
         self.assertEqual(self.resource.current_status, ResourceStatus.FETCH_FAILED)
+        self.assertFalse(self.resource.capture_images)
+        self.assertFalse(self.resource.capture_videos)
         self.assertEqual(job.status, JobStatus.RETRY_WAIT)
         self.assertEqual(job.attempt_count, 1)
         self.assertGreater(job.scheduled_at, timezone.now())

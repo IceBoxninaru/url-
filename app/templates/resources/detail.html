@@ -122,31 +122,35 @@
                 </a>
             {% endif %}
 
-            {% if resource.latest_snapshot.image_assets %}
+            {% if has_image_files %}
                 <div>
                     <p><strong>保存した画像</strong></p>
                     <div class="image-gallery image-gallery--compact">
-                        {% for image in resource.latest_snapshot.image_assets %}
-                            <a href="/{{ image.path }}" target="_blank" rel="noreferrer" class="image-card">
-                                <img src="/{{ image.path }}" alt="Captured image {{ forloop.counter }}">
+                        {% for image in image_files %}
+                            <a href="{{ image.path }}" target="_blank" rel="noreferrer" class="image-card">
+                                <img src="{{ image.path }}" alt="{{ image.name }}">
                             </a>
                         {% endfor %}
                     </div>
                 </div>
             {% endif %}
 
-            {% if resource.latest_snapshot.video_assets %}
+            {% if has_video_files %}
                 <div>
                     <p><strong>保存した動画</strong></p>
                     <div class="video-gallery video-gallery--compact">
-                        {% for video in resource.latest_snapshot.video_assets %}
-                            <a href="/{{ video.path }}" target="_blank" rel="noreferrer" class="video-card">
-                                <video src="/{{ video.path }}" controls preload="metadata"></video>
+                        {% for video in video_files %}
+                            <a href="{{ video.path }}" target="_blank" rel="noreferrer" class="video-card">
+                                <video src="{{ video.path }}" controls preload="metadata"></video>
                             </a>
                         {% endfor %}
                     </div>
                 </div>
-            {% elif not resource.latest_snapshot.screenshot_full_path and not resource.latest_snapshot.image_assets %}
+            {% endif %}
+
+            {% if capture_mismatch %}
+                <p class="muted">保存済みファイルが見つかりません。再取得してください。</p>
+            {% elif not resource.latest_snapshot.screenshot_full_path and not has_image_files and not has_video_files %}
                 <p class="muted">保存済みの画像・動画はありません。</p>
             {% endif %}
         </div>

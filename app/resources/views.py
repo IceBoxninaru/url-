@@ -1,5 +1,6 @@
 import hashlib
 
+from django.conf import settings
 from django.contrib import messages
 from django.http import HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -10,7 +11,12 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from resources.forms import ResourceFilterForm, ResourceForm
 from resources.models import Resource
-from resources.services import check_resource_link_status, delete_resource_with_artifacts, enqueue_capture_job
+from resources.services import (
+    check_resource_link_status,
+    delete_resource_with_artifacts,
+    enqueue_capture_job,
+    get_capture_files,
+)
 
 
 def build_snapshot_payload_context(snapshot):
@@ -26,11 +32,35 @@ def build_snapshot_payload_context(snapshot):
 
 
 def build_resource_detail_context(resource, form=None):
+    image_names, video_names = get_capture_files(resource.pk)
+    storage_url = settings.STORAGE_URL.rstrip("/")
+    image_files = [
+        {
+            "name": image_name,
+            "path": f"{storage_url}/images/resource_{resource.pk:04d}/{image_name}",
+        }
+        for image_name in image_names
+    ]
+    video_files = [
+        {
+            "name": video_name,
+            "path": f"{storage_url}/videos/resource_{resource.pk:04d}/{video_name}",
+        }
+        for video_name in video_names
+    ]
     return {
         "resource": resource,
         "form": form or ResourceForm(instance=resource),
         "snapshots": resource.snapshots.all()[:10],
         "latest_snapshot_context": build_snapshot_payload_context(resource.latest_snapshot),
+        "image_files": image_files,
+        "video_files": video_files,
+        "has_image_files": bool(image_files),
+        "has_video_files": bool(video_files),
+        "capture_mismatch": (
+            (resource.capture_images and not image_files)
+            or (resource.capture_videos and not video_files)
+        ),
     }
 
 
