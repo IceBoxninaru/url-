@@ -17,10 +17,13 @@
 X の取得でログイン済み状態を使いたい場合は、`storage/auth/x.json` に Playwright の `storage_state` を置きます。  
 アプリは X / Twitter のURL取得時だけこのファイルを読みます。
 
+`storage/auth/x_profile/` に Playwright / Chromium のプロファイルを置いた場合も、`x.json` が無いときの代替として使います。
+
 設定値:
 
 ```powershell
 CAPTURE_X_STORAGE_STATE_PATH=storage/auth/x.json
+CAPTURE_X_PROFILE_PATH=storage/auth/x_profile
 ```
 
 ## Docker Compose

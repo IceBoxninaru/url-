@@ -403,6 +403,24 @@ def get_playwright_storage_state_path(page_domain: str) -> Path | None:
     return candidate
 
 
+def get_playwright_profile_path(page_domain: str) -> Path | None:
+    if not is_x_domain(page_domain):
+        return None
+    raw_path = getattr(settings, "CAPTURE_X_PROFILE_PATH", "").strip()
+    if not raw_path:
+        return None
+    candidate = resolve_storage_state_path(raw_path)
+    if not candidate.exists() or not candidate.is_dir():
+        return None
+    try:
+        next(candidate.iterdir())
+    except StopIteration:
+        return None
+    except OSError:
+        return None
+    return candidate
+
+
 def normalize_media_candidate_url(raw_url: str, source_url: str) -> str:
     cleaned = html_unescape_and_clean_url(raw_url)
     if not cleaned or cleaned.startswith(("data:", "blob:")):
@@ -843,6 +861,8 @@ def matches_configured_domain(domain: str, allowed_domains: list[str]) -> bool:
 
 
 def supports_video_capture(domain: str) -> bool:
+    if not is_scoped_social_capture_domain(domain):
+        return True
     return matches_configured_domain(domain, settings.CAPTURE_VIDEO_DOMAINS)
 
 
@@ -2269,17 +2289,26 @@ def fetch_with_playwright(
 
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
             storage_state_path = get_playwright_storage_state_path(page_domain)
+            profile_path = None if storage_state_path is not None else get_playwright_profile_path(page_domain)
             capture_domain = page_domain or urlparse(url).netloc
             viewport_defaults = {
                 "width": settings.CAPTURE_VIEWPORT_WIDTH,
                 "height": settings.CAPTURE_VIEWPORT_HEIGHT,
             }
-            context_kwargs = {"viewport": viewport_defaults}
-            if storage_state_path is not None:
-                context_kwargs["storage_state"] = str(storage_state_path)
-            context = browser.new_context(**context_kwargs)
+            browser = None
+            if profile_path is not None:
+                context = playwright.chromium.launch_persistent_context(
+                    str(profile_path),
+                    headless=True,
+                    viewport=viewport_defaults,
+                )
+            else:
+                browser = playwright.chromium.launch(headless=True)
+                context_kwargs = {"viewport": viewport_defaults}
+                if storage_state_path is not None:
+                    context_kwargs["storage_state"] = str(storage_state_path)
+                context = browser.new_context(**context_kwargs)
             try:
                 page = context.new_page()
                 observed_video_urls: list[str] = []
@@ -2288,6 +2317,7 @@ def fetch_with_playwright(
                 response_payload: dict = {
                     "storage_state_used": bool(storage_state_path),
                     "storage_state_path": str(storage_state_path) if storage_state_path else "",
+                    "profile_path_used": str(profile_path) if profile_path else "",
                     "capture_settings": {
                         "images": capture_images,
                         "videos": capture_videos,
@@ -2402,7 +2432,8 @@ def fetch_with_playwright(
                 response_payload["observed_media_responses"] = observed_media_responses
             finally:
                 context.close()
-                browser.close()
+                if browser is not None:
+                    browser.close()
 
         metadata = extract_metadata(html)
         if page_title and not metadata.get("page_title"):

@@ -29,6 +29,7 @@ from resources.services import (
     enqueue_capture_job,
     filter_video_candidate_urls,
     get_ffprobe_executable,
+    get_playwright_profile_path,
     get_playwright_storage_state_path,
     is_observed_video_response,
     normalize_url,
@@ -230,6 +231,29 @@ class URLNormalizationTests(TestCase):
 
         self.assertEqual(get_playwright_storage_state_path("x.com"), target)
         self.assertIsNone(get_playwright_storage_state_path("instagram.com"))
+
+    @override_settings(CAPTURE_X_PROFILE_PATH="storage/auth/x_profile")
+    def test_get_playwright_profile_path_returns_none_when_directory_missing_or_empty(self):
+        auth_dir = settings.ROOT_DIR / "storage" / "auth"
+        auth_dir.mkdir(parents=True, exist_ok=True)
+        profile_dir = auth_dir / "x_profile"
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        self.addCleanup(lambda: shutil.rmtree(profile_dir, ignore_errors=True))
+
+        self.assertIsNone(get_playwright_profile_path("x.com"))
+
+    @override_settings(CAPTURE_X_PROFILE_PATH="storage/auth/x_profile")
+    def test_get_playwright_profile_path_returns_directory_for_non_empty_x_profile(self):
+        auth_dir = settings.ROOT_DIR / "storage" / "auth"
+        auth_dir.mkdir(parents=True, exist_ok=True)
+        profile_dir = auth_dir / "x_profile"
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        marker = profile_dir / "Default"
+        marker.mkdir(parents=True, exist_ok=True)
+        self.addCleanup(lambda: shutil.rmtree(profile_dir, ignore_errors=True))
+
+        self.assertEqual(get_playwright_profile_path("x.com"), profile_dir)
+        self.assertIsNone(get_playwright_profile_path("instagram.com"))
 
     @override_settings(CAPTURE_FFPROBE_PATH="storage/tools/ffprobe.exe")
     def test_get_ffprobe_executable_uses_configured_path(self):
@@ -1216,6 +1240,31 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             self.resource.normalized_url,
             capture_images=False,
             capture_videos=False,
+            page_domain=self.resource.domain,
+        )
+
+    def test_choose_capture_result_attempts_video_capture_for_generic_domains(self):
+        self.resource.capture_images = False
+        self.resource.capture_videos = True
+        self.resource.save(update_fields=["capture_images", "capture_videos"])
+
+        http_result = CaptureResult(
+            fetch_url=self.resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            html="<html><video src='https://cdn.example.com/sample.mp4'></video></html>",
+            extracted_text="body",
+        )
+
+        with patch("resources.services.fetch_with_http", return_value=http_result) as mocked_http:
+            with patch("resources.services.should_use_playwright", return_value=False):
+                result = choose_capture_result(self.resource)
+
+        self.assertEqual(result, http_result)
+        mocked_http.assert_called_once_with(
+            self.resource.normalized_url,
+            capture_images=False,
+            capture_videos=True,
             page_domain=self.resource.domain,
         )
 
