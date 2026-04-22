@@ -21,6 +21,7 @@ from resources.services import (
     LinkCheckResult,
     MediaProbeResult,
     check_resource_link_status,
+    choose_capture_result,
     collect_image_urls,
     collect_video_urls,
     download_video_assets,
@@ -31,7 +32,9 @@ from resources.services import (
     is_observed_video_response,
     normalize_url,
     normalize_media_candidate_url,
+    run_ai_pipeline,
     resolve_storage_state_path,
+    translate_text_to_japanese,
 )
 from snapshots.models import FetchMethod, Snapshot
 from tags.models import Tag
@@ -257,6 +260,8 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
                 "title_manual": "Manual title",
                 "note": "Important note",
                 "favorite": "on",
+                "capture_images": "on",
+                "capture_videos": "on",
                 "tags": [self.tag_a.id, self.tag_b.id],
             },
         )
@@ -268,10 +273,35 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(resource.normalized_url, "https://example.com/post/1")
         self.assertEqual(resource.domain, "example.com")
         self.assertTrue(resource.favorite)
+        self.assertTrue(resource.capture_images)
+        self.assertTrue(resource.capture_videos)
+        self.assertFalse(resource.search_only)
         self.assertEqual(resource.tags.count(), 2)
         job = CaptureJob.objects.get()
         self.assertEqual(job.job_type, JobType.CAPTURE)
         self.assertEqual(job.status, JobStatus.QUEUED)
+
+    def test_post_create_creates_new_tags_and_search_only_setting(self):
+        response = self.client.post(
+            reverse("resources:create"),
+            {
+                "original_url": "https://example.com/post/search-only",
+                "title_manual": "Search Only",
+                "search_only": "on",
+                "capture_images": "on",
+                "new_tags": "gamma, delta",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        resource = Resource.objects.get()
+        self.assertTrue(resource.search_only)
+        self.assertEqual(
+            list(resource.tags.order_by("name").values_list("name", flat=True)),
+            ["delta", "gamma"],
+        )
+        self.assertTrue(Tag.objects.filter(name="gamma").exists())
+        self.assertTrue(Tag.objects.filter(name="delta").exists())
 
     def test_post_create_duplicate_url_shows_registered_message(self):
         Resource.objects.create(
@@ -303,6 +333,8 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
                 "original_url": "https://example.com/post/template",
                 "title_manual": "Template",
                 "note_template": template_value,
+                "capture_images": "on",
+                "capture_videos": "on",
                 "review_state": ReviewState.NEEDS_REVIEW,
             },
         )
@@ -426,6 +458,31 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         resources = list(response.context["resources"])
         self.assertEqual(resources, [resource_a])
 
+    def test_search_only_resource_is_hidden_until_query_matches(self):
+        visible_resource = Resource.objects.create(
+            original_url="https://example.com/visible",
+            normalized_url="https://example.com/visible",
+            domain="example.com",
+            title_manual="Visible Entry",
+        )
+        hidden_resource = Resource.objects.create(
+            original_url="https://example.com/hidden",
+            normalized_url="https://example.com/hidden",
+            domain="example.com",
+            title_manual="Hidden Entry",
+            search_only=True,
+        )
+
+        list_response = self.client.get(reverse("resources:list"))
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list(list_response.context["resources"]), [visible_resource])
+        self.assertNotContains(list_response, "Hidden Entry")
+
+        search_response = self.client.get(reverse("resources:list"), {"q": "Hidden"})
+        self.assertEqual(search_response.status_code, 200)
+        self.assertEqual(list(search_response.context["resources"]), [hidden_resource])
+        self.assertContains(search_response, "検索専用")
+
     def test_list_shows_link_to_create_page(self):
         response = self.client.get(reverse("resources:list"))
         self.assertEqual(response.status_code, 200)
@@ -520,6 +577,59 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         content = response.content.decode("utf-8")
         self.assertLess(content.find("最新スナップショット"), content.find("編集"))
+
+    def test_detail_shows_translation_when_available(self):
+        resource = Resource.objects.create(
+            original_url="https://example.com/translated",
+            normalized_url="https://example.com/translated",
+            domain="example.com",
+            title_manual="Translated Entry",
+        )
+        snapshot = Snapshot.objects.create(
+            resource=resource,
+            snapshot_no=1,
+            fetch_url=resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            page_title="Translated",
+            extracted_text="Hello world",
+            ai_summary="こんにちは、世界",
+        )
+        resource.latest_snapshot = snapshot
+        resource.save(update_fields=["latest_snapshot"])
+
+        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+            response = self.client.get(reverse("resources:detail", args=[resource.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "日本語訳")
+        self.assertContains(response, "こんにちは、世界")
+
+    def test_detail_hides_translation_when_snapshot_has_none(self):
+        resource = Resource.objects.create(
+            original_url="https://example.com/japanese",
+            normalized_url="https://example.com/japanese",
+            domain="example.com",
+            title_manual="Japanese Entry",
+        )
+        snapshot = Snapshot.objects.create(
+            resource=resource,
+            snapshot_no=1,
+            fetch_url=resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            page_title="日本語の記事",
+            extracted_text="これは日本語の本文です。",
+            ai_summary="",
+        )
+        resource.latest_snapshot = snapshot
+        resource.save(update_fields=["latest_snapshot"])
+
+        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+            response = self.client.get(reverse("resources:detail", args=[resource.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "日本語訳")
 
     def test_detail_get_displays_checked_link_status(self):
         resource = Resource.objects.create(
@@ -636,11 +746,66 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         ai_job = CaptureJob.objects.filter(job_type=JobType.AI_ENRICH).get()
         self.assertEqual(ai_job.status, JobStatus.QUEUED)
 
-        self.assertTrue(run_one_job())
+        with patch(
+            "resources.services.translate_text_to_japanese",
+            return_value=("これは英語本文の日本語訳です。", {"translation_status": "translated", "detected_language": "en"}),
+        ):
+            self.assertTrue(run_one_job())
         snapshot.refresh_from_db()
         ai_job.refresh_from_db()
         self.assertEqual(ai_job.status, JobStatus.SUCCEEDED)
-        self.assertNotEqual(snapshot.ai_summary, "")
+        self.assertEqual(snapshot.ai_summary, "これは英語本文の日本語訳です。")
+
+    def test_choose_capture_result_respects_capture_preferences(self):
+        self.resource.capture_images = False
+        self.resource.capture_videos = False
+        self.resource.save(update_fields=["capture_images", "capture_videos"])
+
+        http_result = CaptureResult(
+            fetch_url=self.resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            html="<html></html>",
+            extracted_text="body",
+        )
+
+        with patch("resources.services.fetch_with_http", return_value=http_result) as mocked_http:
+            with patch("resources.services.should_use_playwright", return_value=False):
+                result = choose_capture_result(self.resource)
+
+        self.assertEqual(result, http_result)
+        mocked_http.assert_called_once_with(
+            self.resource.normalized_url,
+            capture_images=False,
+            capture_videos=False,
+            page_domain=self.resource.domain,
+        )
+
+    def test_translate_text_to_japanese_skips_japanese_source(self):
+        translation, payload = translate_text_to_japanese("これは日本語の文章です。")
+
+        self.assertEqual(translation, "")
+        self.assertEqual(payload["translation_status"], "source_already_japanese")
+
+    def test_run_ai_pipeline_uses_translated_text_for_non_japanese_source(self):
+        snapshot = Snapshot(
+            resource=self.resource,
+            snapshot_no=1,
+            fetch_url=self.resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            extracted_text="Hello world from article body.",
+            page_title="English article",
+        )
+
+        with patch(
+            "resources.services.translate_text_to_japanese",
+            return_value=("これは英語記事の日本語訳です。", {"translation_status": "translated", "detected_language": "en"}),
+        ):
+            result = run_ai_pipeline(snapshot)
+
+        self.assertEqual(result.summary, "これは英語記事の日本語訳です。")
+        self.assertEqual(result.payload["translation_status"], "translated")
+        self.assertEqual(result.payload["detected_language"], "en")
 
     def test_capture_success_persists_downloaded_images(self):
         enqueue_capture_job(self.resource)

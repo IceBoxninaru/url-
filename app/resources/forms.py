@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from django import forms
 
 from resources.models import Resource, ResourceStatus, ReviewState
@@ -13,6 +15,8 @@ NOTE_TEMPLATE_CHOICES = [
     ("就活用", "就活用"),
     ("買い物候補", "買い物候補"),
 ]
+
+NEW_TAG_SPLIT_RE = re.compile(r"[\n,、]+")
 
 
 class ResourceForm(forms.ModelForm):
@@ -32,14 +36,32 @@ class ResourceForm(forms.ModelForm):
         label="タグ",
         widget=forms.CheckboxSelectMultiple,
     )
+    new_tags = forms.CharField(
+        required=False,
+        label="新しいタグを追加",
+        widget=forms.TextInput(attrs={"placeholder": "例: 翻訳待ち, 授業メモ"}),
+        help_text="カンマまたは改行区切りで複数追加できます。追加したタグは今後も使えます。",
+    )
 
     class Meta:
         model = Resource
-        fields = ["original_url", "title_manual", "note", "favorite", "review_state"]
+        fields = [
+            "original_url",
+            "title_manual",
+            "note",
+            "favorite",
+            "search_only",
+            "capture_images",
+            "capture_videos",
+            "review_state",
+        ]
         labels = {
             "title_manual": "手動タイトル",
             "note": "メモ",
             "favorite": "お気に入り",
+            "search_only": "一覧には出さず、検索時のみ表示する",
+            "capture_images": "画像を保存する",
+            "capture_videos": "動画を保存する",
             "review_state": "見直し状態",
         }
         widgets = {
@@ -52,6 +74,9 @@ class ResourceForm(forms.ModelForm):
         self.existing_resource: Resource | None = None
         self.fields["tags"].queryset = Tag.objects.all().order_by("sort_order", "name")
         self.fields["favorite"].label = "お気に入りにする"
+        self.fields["search_only"].help_text = "オンにすると通常の一覧では隠れ、検索入力時だけ表示されます。"
+        self.fields["capture_images"].help_text = "オフにすると画像ファイルを保存しません。"
+        self.fields["capture_videos"].help_text = "オフにすると動画ファイルを保存しません。"
         self.fields["review_state"].label = "見直し状態"
         self.fields["review_state"].required = False
         self.fields["review_state"].initial = ReviewState.NONE
@@ -64,7 +89,11 @@ class ResourceForm(forms.ModelForm):
                 "note",
                 "review_state",
                 "favorite",
+                "search_only",
+                "capture_images",
+                "capture_videos",
                 "tags",
+                "new_tags",
             ]
         )
         if self.instance.pk:
@@ -91,6 +120,40 @@ class ResourceForm(forms.ModelForm):
 
         return original_url
 
+    def clean_new_tags(self) -> list[str]:
+        raw_value = self.cleaned_data.get("new_tags", "")
+        if not raw_value:
+            return []
+
+        max_length = Tag._meta.get_field("name").max_length
+        normalized_names: list[str] = []
+        seen_names: set[str] = set()
+        for candidate in NEW_TAG_SPLIT_RE.split(raw_value):
+            name = candidate.strip()
+            if not name:
+                continue
+            if len(name) > max_length:
+                raise forms.ValidationError(f"タグ名は {max_length} 文字以内で入力してください。")
+            key = name.casefold()
+            if key not in seen_names:
+                seen_names.add(key)
+                normalized_names.append(name)
+        return normalized_names
+
+    def resolve_tags(self) -> list[Tag]:
+        resolved_tags = list(self.cleaned_data.get("tags") or [])
+        existing_names = {tag.name.casefold(): tag for tag in resolved_tags}
+        for name in self.cleaned_data.get("new_tags") or []:
+            key = name.casefold()
+            if key in existing_names:
+                continue
+            tag = Tag.objects.filter(name__iexact=name).first()
+            if tag is None:
+                tag = Tag.objects.create(name=name)
+            existing_names[key] = tag
+            resolved_tags.append(tag)
+        return resolved_tags
+
     def save(self, commit=True):
         resource = super().save(commit=False)
         resource.normalized_url = self.cleaned_normalized_url
@@ -107,11 +170,12 @@ class ResourceForm(forms.ModelForm):
                 resource.note = note
         else:
             resource.note = note
+        resolved_tags = self.resolve_tags()
         if commit:
             resource.save()
-            resource.tags.set(self.cleaned_data["tags"])
+            resource.tags.set(resolved_tags)
         else:
-            self._pending_tags = self.cleaned_data["tags"]
+            self._pending_tags = resolved_tags
         return resource
 
     def save_m2m(self):

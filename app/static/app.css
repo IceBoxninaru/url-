@@ -722,6 +722,7 @@ button.danger {
 .review-done { background: rgba(31, 94, 91, 0.14); }
 .review-on_hold { background: rgba(96, 104, 119, 0.18); }
 .review-favorite { background: rgba(31, 36, 48, 0.12); }
+.review-search-only { background: rgba(52, 84, 209, 0.14); }
 
 .meta-list {
     display: grid;

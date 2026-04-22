@@ -51,6 +51,12 @@
         <dd>{{ resource.get_review_state_display }}</dd>
         <dt>お気に入り</dt>
         <dd>{% if resource.favorite %}はい{% else %}いいえ{% endif %}</dd>
+        <dt>一覧表示</dt>
+        <dd>{{ resource.visibility_label }}</dd>
+        <dt>画像取得</dt>
+        <dd>{% if resource.capture_images %}有効{% else %}無効{% endif %}</dd>
+        <dt>動画取得</dt>
+        <dd>{% if resource.capture_videos %}有効{% else %}無効{% endif %}</dd>
     </dl>
     <div class="tag-row">
         {% for tag in resource.tags.all %}
@@ -84,7 +90,9 @@
     <div class="detail-grid">
         <div>
             <p><strong>ページタイトル:</strong> {{ resource.latest_snapshot.page_title|default:"-" }}</p>
-            <p><strong>AI要約:</strong> {{ resource.latest_snapshot.ai_summary|default:"-" }}</p>
+            {% if resource.latest_snapshot.ai_translation %}
+                <p><strong>日本語訳:</strong> {{ resource.latest_snapshot.ai_translation }}</p>
+            {% endif %}
             <p><strong>カテゴリ:</strong> {{ resource.latest_snapshot.ai_category|default:"-" }}</p>
             <p><strong>HTTP:</strong> {{ resource.latest_snapshot.http_status|default:"-" }}</p>
             <p><strong>取得方法:</strong> {{ resource.latest_snapshot.get_fetch_method_display }}</p>

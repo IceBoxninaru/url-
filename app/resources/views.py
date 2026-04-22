@@ -42,7 +42,9 @@ def build_resource_list_signature(resources):
             f"{resource.current_status}:"
             f"{resource.link_status}:"
             f"{resource.review_state}:"
-            f"{resource.latest_snapshot_id or 0}"
+            f"{resource.latest_snapshot_id or 0}:"
+            f"{resource.search_only}:"
+            f"{resource.latest_translation}"
         )
         for resource in resources
     )
@@ -50,7 +52,7 @@ def build_resource_list_signature(resources):
 
 
 def build_resource_list_context(request):
-    filter_form = ResourceFilterForm(request.GET or None)
+    filter_form = ResourceFilterForm(request.GET)
     resources = Resource.objects.all()
     if filter_form.is_valid():
         resources = resources.apply_filters(
@@ -142,7 +144,7 @@ def resource_detail(request, pk: int):
 
     if method == "DELETE":
         delete_resource_with_artifacts(resource)
-        messages.success(request, "URLと関連ファイルを削除しました。")
+        messages.success(request, "URLと関連する画像・動画を含む保存ファイルをすぐに削除しました。")
         return redirect("resources:list")
 
     return HttpResponseNotAllowed(["GET", "POST"])

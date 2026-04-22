@@ -64,5 +64,13 @@ class Snapshot(models.Model):
     def video_count(self) -> int:
         return len(self.video_assets or [])
 
+    @property
+    def ai_translation(self) -> str:
+        return self.ai_summary
+
+    @property
+    def has_translation(self) -> bool:
+        return bool(self.ai_summary.strip())
+
     def get_absolute_url(self):
         return reverse("snapshots:detail", args=[self.pk])

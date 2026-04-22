@@ -35,6 +35,9 @@
                         {% if resource.favorite %}
                             <span class="review-chip review-favorite">お気に入り</span>
                         {% endif %}
+                        {% if resource.search_only %}
+                            <span class="review-chip review-search-only">検索専用</span>
+                        {% endif %}
                     </div>
                 </div>
 
@@ -54,11 +57,11 @@
                     <span class="resource-card__url">{{ resource.original_url }}</span>
                 </div>
 
-                {% if resource.note or resource.latest_snapshot and resource.latest_snapshot.ai_summary %}
+                {% if resource.note or resource.latest_translation %}
                     <p class="resource-card__snippet">
                         {% if resource.note %}{{ resource.note|truncatechars:90 }}{% endif %}
-                        {% if resource.note and resource.latest_snapshot and resource.latest_snapshot.ai_summary %} / {% endif %}
-                        {% if resource.latest_snapshot and resource.latest_snapshot.ai_summary %}{{ resource.latest_snapshot.ai_summary|truncatechars:110 }}{% endif %}
+                        {% if resource.note and resource.latest_translation %} / {% endif %}
+                        {% if resource.latest_translation %}{{ resource.latest_translation|truncatechars:110 }}{% endif %}
                     </p>
                 {% endif %}
 

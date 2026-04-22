@@ -46,8 +46,8 @@ class ResourceQuerySet(models.QuerySet):
         review_state: str = "",
     ):
         queryset = self.with_related()
+        query = (query or "").strip()
         if query:
-            query = query.strip()
             if connection.vendor == "postgresql":
                 vector = (
                     SearchVector("original_url", weight="A")
@@ -79,7 +79,7 @@ class ResourceQuerySet(models.QuerySet):
                     .order_by("-favorite", "-updated_at")
                 )
         else:
-            queryset = queryset.order_by("-favorite", "-updated_at")
+            queryset = queryset.exclude(search_only=True).order_by("-favorite", "-updated_at")
 
         if domain:
             queryset = queryset.filter(domain=domain)
@@ -110,6 +110,9 @@ class Resource(models.Model):
     title_manual = models.CharField(max_length=255, blank=True)
     note = models.TextField(blank=True)
     favorite = models.BooleanField(default=False)
+    capture_images = models.BooleanField(default=True)
+    capture_videos = models.BooleanField(default=True)
+    search_only = models.BooleanField(default=False, db_index=True)
     review_state = models.CharField(
         max_length=32,
         choices=ReviewState.choices,
@@ -165,10 +168,18 @@ class Resource(models.Model):
         return ""
 
     @property
+    def latest_translation(self) -> str:
+        return self.latest_summary
+
+    @property
     def latest_screenshot_path(self) -> str:
         if self.latest_snapshot:
             return self.latest_snapshot.screenshot_full_path
         return ""
+
+    @property
+    def visibility_label(self) -> str:
+        return "検索時のみ" if self.search_only else "通常表示"
 
     def get_absolute_url(self):
         return reverse("resources:detail", args=[self.pk])
