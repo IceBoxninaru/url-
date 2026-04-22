@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from resources.forms import ResourceFilterForm, ResourceForm
 from resources.models import Resource, ReviewState
-from resources.services import build_snapshot_diff_context, get_capture_files
+from resources.services import get_capture_files
 from jobs.models import CaptureJob, JobStatus, JobType
 from snapshots.models import Snapshot
 from tags.models import Tag
@@ -40,7 +40,6 @@ def build_snapshot_detail_context(snapshot: Snapshot) -> dict:
     return {
         "snapshot": snapshot,
         **build_snapshot_payload_context(snapshot),
-        "snapshot_diff": build_snapshot_diff_context(snapshot),
     }
 
 
@@ -55,7 +54,6 @@ def build_resource_detail_context(resource, form=None) -> dict:
         "video_files": video_files,
         "has_image_files": bool(image_files),
         "has_video_files": bool(video_files),
-        "latest_snapshot_diff": build_snapshot_diff_context(resource.latest_snapshot),
         "capture_mismatch": (
             (resource.capture_images and not image_files)
             or (resource.capture_videos and not video_files)
@@ -154,7 +152,7 @@ def describe_job_activity(job: CaptureJob) -> dict:
         return {
             "tone": "info",
             "icon": "spark",
-            "title": "AI要約を更新しました",
+            "title": "AI翻訳を更新しました",
         }
     return {
         "tone": "info",
@@ -271,7 +269,6 @@ def build_resource_list_signature(resources) -> str:
             f"{resource.is_recheck_due}:"
             f"{resource.latest_snapshot_id or 0}:"
             f"{resource.search_only}:"
-            f"{resource.latest_summary}:"
             f"{resource.latest_translation}"
         )
         for resource in resources

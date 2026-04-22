@@ -800,7 +800,6 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             http_status=200,
             page_title="Translated",
             extracted_text="Hello world",
-            ai_summary="英語記事の要約です。",
             ai_translation="こんにちは、世界",
         )
         resource.latest_snapshot = snapshot
@@ -810,9 +809,9 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             response = self.client.get(reverse("resources:detail", args=[resource.id]))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "英語記事の要約です。")
-        self.assertContains(response, "日本語訳")
+        self.assertContains(response, "日本語翻訳")
         self.assertContains(response, "こんにちは、世界")
+        self.assertNotContains(response, "AI要約")
 
     def test_detail_hides_translation_when_snapshot_has_none(self):
         resource = Resource.objects.create(
@@ -829,7 +828,6 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             http_status=200,
             page_title="日本語の記事",
             extracted_text="これは日本語の本文です。",
-            ai_summary="日本語の要約です。",
             ai_translation="",
         )
         resource.latest_snapshot = snapshot
@@ -839,8 +837,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             response = self.client.get(reverse("resources:detail", args=[resource.id]))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "日本語の要約です。")
-        self.assertNotContains(response, "日本語訳")
+        self.assertContains(response, "日本語翻訳はまだありません。")
 
     def test_detail_displays_saved_images_from_latest_snapshot(self):
         resource = Resource.objects.create(
@@ -958,7 +955,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertContains(response, "リンク切れ")
         self.assertContains(response, "HTTP 404")
 
-    def test_detail_shows_latest_snapshot_diff(self):
+    def test_detail_hides_snapshot_diff_section(self):
         resource = Resource.objects.create(
             original_url="https://example.com/diff",
             normalized_url="https://example.com/diff",
@@ -1013,15 +1010,11 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             response = self.client.get(reverse("resources:detail", args=[resource.id]))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "前回との差分")
-        self.assertContains(response, "Old title")
-        self.assertContains(response, "New title")
-        self.assertContains(response, "200")
-        self.assertContains(response, "404")
-        self.assertContains(response, "3 文字")
-        self.assertContains(response, "6 文字")
+        self.assertNotContains(response, "前回との差分")
+        self.assertNotContains(response, "Old title")
+        self.assertContains(response, "スナップショット履歴")
 
-    def test_snapshot_detail_shows_previous_snapshot_diff(self):
+    def test_snapshot_detail_hides_previous_snapshot_diff(self):
         resource = Resource.objects.create(
             original_url="https://example.com/snapshot-diff",
             normalized_url="https://example.com/snapshot-diff",
@@ -1050,9 +1043,8 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         response = self.client.get(reverse("snapshots:detail", args=[current_snapshot.id]))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "前回との差分")
-        self.assertContains(response, reverse("snapshots:detail", args=[previous_snapshot.id]))
-        self.assertContains(response, "Before")
+        self.assertNotContains(response, "前回との差分")
+        self.assertNotContains(response, "Before")
         self.assertContains(response, "After")
 
     def test_detail_displays_saved_videos(self):
@@ -1193,16 +1185,13 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
 
         with patch(
             "resources.services.translate_text_to_japanese",
-            side_effect=[
-                ("短い日本語要約です。", {"translation_status": "translated", "detected_language": "en"}),
-                ("これは英語本文の日本語訳です。", {"translation_status": "translated", "detected_language": "en"}),
-            ],
+            return_value=("これは英語本文の日本語訳です。", {"translation_status": "translated", "detected_language": "en"}),
         ):
             self.assertTrue(run_one_job())
         snapshot.refresh_from_db()
         ai_job.refresh_from_db()
         self.assertEqual(ai_job.status, JobStatus.SUCCEEDED)
-        self.assertEqual(snapshot.ai_summary, "短い日本語要約です。")
+        self.assertEqual(snapshot.ai_summary, "")
         self.assertEqual(snapshot.ai_translation, "これは英語本文の日本語訳です。")
 
     def test_choose_capture_result_respects_capture_preferences(self):
@@ -1236,7 +1225,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         self.assertEqual(translation, "")
         self.assertEqual(payload["translation_status"], "source_already_japanese")
 
-    def test_run_ai_pipeline_uses_translated_summary_and_translation_for_non_japanese_source(self):
+    def test_run_ai_pipeline_returns_translation_for_non_japanese_source(self):
         snapshot = Snapshot(
             resource=self.resource,
             snapshot_no=1,
@@ -1248,21 +1237,15 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
 
         with patch(
             "resources.services.translate_text_to_japanese",
-            side_effect=[
-                ("英語記事の短い要約です。", {"translation_status": "translated", "detected_language": "en"}),
-                ("これは英語記事の日本語訳です。", {"translation_status": "translated", "detected_language": "en"}),
-            ],
+            return_value=("これは英語記事の日本語訳です。", {"translation_status": "translated", "detected_language": "en"}),
         ):
             result = run_ai_pipeline(snapshot)
 
-        self.assertEqual(result.summary, "英語記事の短い要約です。")
         self.assertEqual(result.translation, "これは英語記事の日本語訳です。")
-        self.assertEqual(result.payload["summary_status"], "translated_to_japanese")
-        self.assertEqual(result.payload["summary_detected_language"], "en")
         self.assertEqual(result.payload["translation_status"], "translated")
         self.assertEqual(result.payload["translation_detected_language"], "en")
 
-    def test_run_ai_pipeline_generates_summary_for_japanese_source(self):
+    def test_run_ai_pipeline_skips_translation_for_japanese_source(self):
         snapshot = Snapshot(
             resource=self.resource,
             snapshot_no=1,
@@ -1274,34 +1257,9 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
 
         result = run_ai_pipeline(snapshot)
 
-        self.assertTrue(result.summary)
         self.assertEqual(result.translation, "")
-        self.assertEqual(result.payload["summary_status"], "generated")
-        self.assertEqual(result.payload["summary_detected_language"], "ja")
         self.assertEqual(result.payload["translation_status"], "source_already_japanese")
         self.assertEqual(result.payload["translation_detected_language"], "ja")
-
-    def test_run_ai_pipeline_avoids_identical_summary_and_translation(self):
-        snapshot = Snapshot(
-            resource=self.resource,
-            snapshot_no=1,
-            fetch_url=self.resource.normalized_url,
-            fetch_method=FetchMethod.HTTP,
-            extracted_text="Only one sentence.",
-            page_title="English article",
-        )
-
-        with patch(
-            "resources.services.translate_text_to_japanese",
-            side_effect=[
-                ("これは同じ文です。", {"translation_status": "translated", "detected_language": "en"}),
-                ("これは同じ文です。", {"translation_status": "translated", "detected_language": "en"}),
-            ],
-        ):
-            result = run_ai_pipeline(snapshot)
-
-        self.assertEqual(result.translation, "これは同じ文です。")
-        self.assertEqual(result.summary, "要点: これは同じ文です。")
 
     def test_capture_success_persists_downloaded_images(self):
         enqueue_capture_job(self.resource)

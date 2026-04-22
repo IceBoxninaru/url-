@@ -64,9 +64,6 @@ AUDIO_EXTENSIONS = {".aac", ".m4a", ".mp3", ".ogg", ".oga", ".wav"}
 TRANSLATION_MAX_SOURCE_CHARS = 1600
 TRANSLATION_MAX_CHUNK_CHARS = 400
 TRANSLATION_ENDPOINT = "https://translate.googleapis.com/translate_a/single"
-SUMMARY_MAX_SEGMENTS = 4
-SUMMARY_TARGET_MAX_CHARS = 180
-SUMMARY_DISTINCT_MAX_CHARS = 100
 
 
 @dataclass
@@ -97,7 +94,6 @@ class CaptureResult:
 
 @dataclass
 class AIResult:
-    summary: str
     translation: str
     category: str
     payload: dict
@@ -2654,96 +2650,6 @@ def normalize_ai_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def split_text_into_sentences(text: str) -> list[str]:
-    normalized = normalize_ai_text(text)
-    if not normalized:
-        return []
-    sentences = [segment.strip() for segment in re.split(r"(?<=[.!?。！？])\s+", normalized) if segment.strip()]
-    return sentences or [normalized]
-
-
-def truncate_summary_text(text: str, max_chars: int) -> str:
-    normalized = normalize_ai_text(text)
-    if len(normalized) <= max_chars:
-        return normalized
-    return f"{normalized[: max_chars - 1].rstrip()}…"
-
-
-def build_summary_text(snapshot: Snapshot) -> str:
-    max_chars = max(
-        80,
-        min(
-            int(getattr(settings, "AI_SUMMARY_MAX_CHARS", 320)),
-            SUMMARY_TARGET_MAX_CHARS,
-        ),
-    )
-    segments: list[str] = []
-    seen: set[str] = set()
-
-    def push(raw_text: str) -> None:
-        normalized = normalize_ai_text(raw_text)
-        if not normalized:
-            return
-        fingerprint = normalized.casefold()
-        if fingerprint in seen:
-            return
-        seen.add(fingerprint)
-        segments.append(normalized)
-
-    push(snapshot.page_title)
-    push(snapshot.og_description)
-
-    body_sentences = split_text_into_sentences(snapshot.extracted_text)
-    if body_sentences:
-        push(body_sentences[0])
-    if len(segments) < 2 and len(body_sentences) > 1:
-        push(body_sentences[1])
-
-    summary_parts: list[str] = []
-    for segment in segments:
-        candidate = normalize_ai_text(" ".join([*summary_parts, segment]))
-        if len(candidate) <= max_chars:
-            summary_parts.append(segment)
-            if len(summary_parts) >= min(SUMMARY_MAX_SEGMENTS, 2):
-                break
-            continue
-        if summary_parts:
-            break
-        return truncate_summary_text(segment, max_chars)
-    return normalize_ai_text(" ".join(summary_parts))
-
-
-def ensure_summary_is_distinct(summary: str, translation: str, snapshot: Snapshot) -> str:
-    normalized_summary = normalize_ai_text(summary)
-    normalized_translation = normalize_ai_text(translation)
-    if not normalized_summary or not normalized_translation:
-        return normalized_summary
-    if normalized_summary != normalized_translation:
-        return normalized_summary
-
-    title = normalize_ai_text(snapshot.page_title)
-    if title and is_probably_japanese_text(title) and title.casefold() != normalized_translation.casefold():
-        return truncate_summary_text(title, SUMMARY_DISTINCT_MAX_CHARS)
-
-    description = normalize_ai_text(snapshot.og_description)
-    if (
-        description
-        and is_probably_japanese_text(description)
-        and description.casefold() != normalized_translation.casefold()
-    ):
-        return truncate_summary_text(description, SUMMARY_DISTINCT_MAX_CHARS)
-
-    summary_clauses = [part.strip() for part in re.split(r"[、,;:：]", normalized_summary) if part.strip()]
-    if summary_clauses:
-        candidate = truncate_summary_text(summary_clauses[0], SUMMARY_DISTINCT_MAX_CHARS)
-        if candidate and normalize_ai_text(candidate) != normalized_translation:
-            return candidate
-
-    if len(normalized_summary) > SUMMARY_DISTINCT_MAX_CHARS:
-        return truncate_summary_text(normalized_summary, SUMMARY_DISTINCT_MAX_CHARS)
-    return f"要点: {normalized_summary}"
-
-
 def build_translation_source_text(snapshot: Snapshot) -> str:
     source = snapshot.extracted_text or snapshot.og_description or snapshot.page_title
     normalized = normalize_ai_text(source)
@@ -2903,52 +2809,25 @@ def run_ai_pipeline(snapshot: Snapshot) -> AIResult:
     }
     if provider == "noop":
         return AIResult(
-            summary="",
             translation="",
             category="",
             payload={
                 **base_payload,
-                "summary_status": "provider_disabled",
-                "summary_detected_language": "",
                 "translation_status": "provider_disabled",
                 "translation_detected_language": "",
             },
         )
 
-    summary_source = build_summary_text(snapshot)
-    summary = summary_source
-    summary_meta = {
-        "summary_status": "empty_source",
-        "summary_detected_language": "",
-    }
-    if summary_source:
-        if is_probably_japanese_text(summary_source):
-            summary_meta = {
-                "summary_status": "generated",
-                "summary_detected_language": "ja",
-            }
-        else:
-            translated_summary, translated_summary_meta = translate_text_to_japanese(summary_source)
-            summary = translated_summary or summary_source
-            summary_meta = {
-                "summary_status": "translated_to_japanese" if translated_summary else "generated_source_language",
-                "summary_detected_language": translated_summary_meta.get("detected_language", ""),
-            }
-            if translated_summary_meta.get("error_message"):
-                summary_meta["summary_error_message"] = translated_summary_meta["error_message"]
-
     translation, translation_meta = translate_text_to_japanese(build_translation_source_text(snapshot))
-    summary = ensure_summary_is_distinct(summary, translation, snapshot)
     category = infer_category(snapshot)
     payload = {
         **base_payload,
-        **summary_meta,
         "translation_status": translation_meta.get("translation_status", ""),
         "translation_detected_language": translation_meta.get("detected_language", ""),
     }
     if translation_meta.get("error_message"):
         payload["translation_error_message"] = translation_meta["error_message"]
-    return AIResult(summary=summary, translation=translation, category=category, payload=payload)
+    return AIResult(translation=translation, category=category, payload=payload)
 
 
 def execute_capture_job(job: CaptureJob) -> Snapshot:
@@ -2978,7 +2857,7 @@ def execute_ai_job(job: CaptureJob) -> Snapshot:
     if snapshot is None:
         raise ValueError("No snapshot available for AI enrichment.")
     ai_result = run_ai_pipeline(snapshot)
-    snapshot.ai_summary = ai_result.summary
+    snapshot.ai_summary = ""
     snapshot.ai_translation = ai_result.translation
     snapshot.ai_category = ai_result.category
     snapshot.ai_payload = ai_result.payload

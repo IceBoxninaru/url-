@@ -28,4 +28,4 @@ class SnapshotViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["snapshot"], snapshot)
         self.assertEqual(response.context["tag_candidates"], ["refactor"])
-        self.assertIn("snapshot_diff", response.context)
+        self.assertNotIn("snapshot_diff", response.context)

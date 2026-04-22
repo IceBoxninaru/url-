@@ -53,7 +53,6 @@ class ResourceQuerySet(models.QuerySet):
             + SearchVector("next_action", weight="B")
             + SearchVector("note", weight="C")
             + SearchVector("snapshots__extracted_text", weight="C")
-            + SearchVector("snapshots__ai_summary", weight="B")
             + SearchVector("snapshots__ai_translation", weight="B")
         )
         search_query = SearchQuery(query)
@@ -75,7 +74,6 @@ class ResourceQuerySet(models.QuerySet):
                 | Q(next_action__icontains=query)
                 | Q(note__icontains=query)
                 | Q(snapshots__extracted_text__icontains=query)
-                | Q(snapshots__ai_summary__icontains=query)
                 | Q(snapshots__ai_translation__icontains=query)
             )
             .distinct()
@@ -212,7 +210,7 @@ class Resource(models.Model):
 
     @property
     def latest_ai_excerpt(self) -> str:
-        return self.latest_summary or self.latest_translation
+        return self.latest_translation
 
     @property
     def latest_screenshot_path(self) -> str:

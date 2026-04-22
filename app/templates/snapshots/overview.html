@@ -7,7 +7,7 @@
     <section class="page-header">
         <div>
             <h1>スナップショット履歴</h1>
-            <p class="page-subtitle">過去の取得結果や変更差分を比較・確認できます。</p>
+            <p class="page-subtitle">過去の取得結果を確認できます。</p>
         </div>
         {% if snapshot %}
             <div class="page-actions">
@@ -127,33 +127,6 @@
                         {% endif %}
                     </section>
 
-                    <section class="panel">
-                        <div class="section-heading">
-                            <div>
-                                <h2>前回との差分</h2>
-                                <p class="section-subtitle">直前のスナップショットとの差分です。</p>
-                            </div>
-                        </div>
-                        {% if snapshot_diff.previous_snapshot %}
-                            <p class="muted">比較対象: <a href="{{ snapshot_diff.previous_snapshot.get_absolute_url }}">#{{ snapshot_diff.previous_snapshot.snapshot_no }}</a></p>
-                            {% if snapshot_diff.items %}
-                                <ul class="diff-list">
-                                    {% for item in snapshot_diff.items %}
-                                        <li>
-                                            <strong>{{ item.label }}</strong>
-                                            <span>{{ item.before }}</span>
-                                            <span class="diff-arrow">→</span>
-                                            <span>{{ item.after }}</span>
-                                        </li>
-                                    {% endfor %}
-                                </ul>
-                            {% else %}
-                                <p class="empty-copy">大きな変更はありません。</p>
-                            {% endif %}
-                        {% else %}
-                            <p class="empty-copy">比較対象のスナップショットはありません。</p>
-                        {% endif %}
-                    </section>
                 </div>
 
                 <div class="detail-layout">

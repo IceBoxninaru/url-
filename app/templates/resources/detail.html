@@ -117,7 +117,7 @@
             <div class="section-heading">
                 <div>
                     <h2>最新スナップショット{% if resource.latest_snapshot %}（{{ resource.latest_snapshot.fetched_at|date:"Y/m/d H:i" }}）{% endif %}</h2>
-                    <p class="section-subtitle">保存済みの要約・本文・画像・動画を確認できます。</p>
+                    <p class="section-subtitle">保存済みの翻訳・本文・画像・動画を確認できます。</p>
                 </div>
                 <a href="{% url 'resources:snapshots' resource.id %}" class="button button--soft">履歴を見る</a>
             </div>
@@ -125,13 +125,13 @@
             {% if resource.latest_snapshot %}
                 <div class="tab-group" data-tab-group>
                     <div class="tab-nav" role="tablist" aria-label="Latest snapshot tabs">
-                        <button type="button" class="tab-button is-active" data-tab-target="summary">要約</button>
+                        <button type="button" class="tab-button is-active" data-tab-target="translation">翻訳</button>
                         <button type="button" class="tab-button" data-tab-target="body">本文</button>
                         <button type="button" class="tab-button" data-tab-target="images">画像</button>
                         <button type="button" class="tab-button" data-tab-target="videos">動画</button>
                     </div>
 
-                    <div class="tab-panel is-active" data-tab-panel="summary">
+                    <div class="tab-panel is-active" data-tab-panel="translation">
                         <div class="snapshot-focus">
                             {% if resource.latest_snapshot.screenshot_full_path %}
                                 <a href="/{{ resource.latest_snapshot.screenshot_full_path }}" target="_blank" rel="noreferrer" class="snapshot-preview-card">
@@ -140,15 +140,9 @@
                             {% endif %}
                             <div class="summary-stack">
                                 <div class="summary-block">
-                                    <h3>最新のAI要約</h3>
-                                    <p>{{ resource.latest_snapshot.ai_summary|default:"要約はまだありません。" }}</p>
+                                    <h3>日本語翻訳</h3>
+                                    <p>{{ resource.latest_snapshot.ai_translation|default:"日本語翻訳はまだありません。" }}</p>
                                 </div>
-                                {% if resource.latest_snapshot.ai_translation %}
-                                    <div class="summary-block">
-                                        <h3>日本語訳</h3>
-                                        <p>{{ resource.latest_snapshot.ai_translation }}</p>
-                                    </div>
-                                {% endif %}
                                 <div class="summary-block">
                                     <h3>ページ情報</h3>
                                     <ul class="bullet-list">
@@ -244,62 +238,32 @@
         </aside>
     </div>
 
-    <div class="detail-layout">
-        <section class="panel">
-            <div class="section-heading">
-                <div>
-                    <h2>前回との差分</h2>
-                    <p class="section-subtitle">最新スナップショットと前回取得結果の差分です。</p>
-                </div>
+    <section class="panel">
+        <div class="section-heading">
+            <div>
+                <h2>スナップショット履歴</h2>
+                <p class="section-subtitle">新しい取得から順に表示します。</p>
             </div>
-            {% if latest_snapshot_diff.previous_snapshot %}
-                <p class="muted">比較対象: <a href="{{ latest_snapshot_diff.previous_snapshot.get_absolute_url }}">Snapshot #{{ latest_snapshot_diff.previous_snapshot.snapshot_no }}</a></p>
-                {% if latest_snapshot_diff.items %}
-                    <ul class="diff-list">
-                        {% for item in latest_snapshot_diff.items %}
-                            <li>
-                                <strong>{{ item.label }}</strong>
-                                <span>{{ item.before }}</span>
-                                <span class="diff-arrow">→</span>
-                                <span>{{ item.after }}</span>
-                            </li>
-                        {% endfor %}
-                    </ul>
-                {% else %}
-                    <p class="empty-copy">前回の取得から大きな変更はありません。</p>
-                {% endif %}
-            {% else %}
-                <p class="empty-copy">比較対象のスナップショットはまだありません。</p>
-            {% endif %}
-        </section>
-
-        <section class="panel">
-            <div class="section-heading">
-                <div>
-                    <h2>スナップショット履歴</h2>
-                    <p class="section-subtitle">新しい取得から順に表示します。</p>
-                </div>
-                <a href="{% url 'resources:snapshots' resource.id %}" class="button button--soft">すべて見る</a>
-            </div>
-            <div class="history-list">
-                {% for snapshot in snapshots %}
-                    <a href="{{ snapshot.get_absolute_url }}" class="history-row">
-                        <div>
-                            <strong>Snapshot #{{ snapshot.snapshot_no }}</strong>
-                            <p class="muted">{{ snapshot.fetched_at|date:"Y/m/d H:i" }}</p>
-                        </div>
-                        <div>
-                            <span class="status-chip status-chip--resource-{% if snapshot.error_message %}fetch_failed{% else %}active{% endif %}">
-                                {% if snapshot.error_message %}エラー{% else %}取得済み{% endif %}
-                            </span>
-                        </div>
-                    </a>
-                {% empty %}
-                    <p class="muted">履歴はまだありません。</p>
-                {% endfor %}
-            </div>
-        </section>
-    </div>
+            <a href="{% url 'resources:snapshots' resource.id %}" class="button button--soft">すべて見る</a>
+        </div>
+        <div class="history-list">
+            {% for snapshot in snapshots %}
+                <a href="{{ snapshot.get_absolute_url }}" class="history-row">
+                    <div>
+                        <strong>Snapshot #{{ snapshot.snapshot_no }}</strong>
+                        <p class="muted">{{ snapshot.fetched_at|date:"Y/m/d H:i" }}</p>
+                    </div>
+                    <div>
+                        <span class="status-chip status-chip--resource-{% if snapshot.error_message %}fetch_failed{% else %}active{% endif %}">
+                            {% if snapshot.error_message %}エラー{% else %}取得済み{% endif %}
+                        </span>
+                    </div>
+                </a>
+            {% empty %}
+                <p class="muted">履歴はまだありません。</p>
+            {% endfor %}
+        </div>
+    </section>
 
     <section class="panel" id="resource-edit">
         <div class="section-heading">
