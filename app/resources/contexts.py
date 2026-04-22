@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 
+from django.core.paginator import Paginator
 from django.urls import reverse
 from django.utils import timezone
 
@@ -11,6 +12,9 @@ from resources.services import build_snapshot_diff_context, get_capture_files
 from jobs.models import CaptureJob, JobStatus, JobType
 from snapshots.models import Snapshot
 from tags.models import Tag
+
+LIST_PAGE_SIZE = 10
+BULK_EDIT_PAGE_SIZE = 10
 
 
 def get_similar_resources(snapshot: Snapshot | None):
@@ -108,6 +112,18 @@ def build_overview_metrics() -> list[dict]:
     return metric_definitions
 
 
+def build_dashboard_context() -> dict:
+    return {
+        "overview_metrics": build_overview_metrics(),
+        "recent_activity": build_recent_activity(limit=10),
+        "tag_count": Tag.objects.count(),
+        "job_count": CaptureJob.objects.count(),
+        "queued_job_count": CaptureJob.objects.filter(
+            status__in=[JobStatus.QUEUED, JobStatus.RETRY_WAIT]
+        ).count(),
+    }
+
+
 def describe_job_activity(job: CaptureJob) -> dict:
     if job.job_type == JobType.CAPTURE:
         if job.status == JobStatus.SUCCEEDED:
@@ -175,6 +191,72 @@ def build_recent_activity(limit: int = 5) -> list[dict]:
     return activity_items
 
 
+def paginate_queryset(queryset, page_number, *, per_page: int):
+    paginator = Paginator(queryset, per_page)
+    return paginator.get_page(page_number or 1)
+
+
+def build_pagination_items(page_obj) -> list[int | None]:
+    total_pages = page_obj.paginator.num_pages
+    if total_pages <= 1:
+        return []
+
+    current_page = page_obj.number
+    page_numbers: list[int | None] = [1]
+    window_start = max(2, current_page - 2)
+    window_end = min(total_pages - 1, current_page + 2)
+
+    if window_start > 2:
+        page_numbers.append(None)
+
+    for number in range(window_start, window_end + 1):
+        page_numbers.append(number)
+
+    if window_end < total_pages - 1:
+        page_numbers.append(None)
+
+    if total_pages > 1:
+        page_numbers.append(total_pages)
+
+    normalized: list[int | None] = []
+    for number in page_numbers:
+        if normalized and normalized[-1] == number:
+            continue
+        normalized.append(number)
+    return normalized
+
+
+def build_pagination_context(page_obj, query_params) -> dict:
+    params = query_params.copy()
+    if "page" in params:
+        del params["page"]
+
+    def build_url(page_number: int) -> str:
+        page_params = params.copy()
+        page_params["page"] = str(page_number)
+        return f"?{page_params.urlencode()}"
+
+    items = []
+    for number in build_pagination_items(page_obj):
+        if number is None:
+            items.append({"ellipsis": True})
+            continue
+        items.append(
+            {
+                "number": number,
+                "current": number == page_obj.number,
+                "url": build_url(number),
+            }
+        )
+
+    return {
+        "is_paginated": page_obj.paginator.num_pages > 1,
+        "items": items,
+        "prev_url": build_url(page_obj.previous_page_number()) if page_obj.has_previous() else "",
+        "next_url": build_url(page_obj.next_page_number()) if page_obj.has_next() else "",
+    }
+
+
 def build_resource_list_signature(resources) -> str:
     basis = "|".join(
         (
@@ -213,15 +295,17 @@ def build_resource_list_context(request) -> dict:
     else:
         resources = resources.with_related()
 
-    resource_list = list(resources)
+    page_obj = paginate_queryset(resources, request.GET.get("page"), per_page=LIST_PAGE_SIZE)
+    resource_list = list(page_obj.object_list)
     return {
         "filter_form": filter_form,
         "resources": resource_list,
-        "resource_count": len(resource_list),
+        "page_obj": page_obj,
+        "pagination": build_pagination_context(page_obj, request.GET),
+        "resource_count": page_obj.paginator.count,
+        "resource_start": page_obj.start_index() if page_obj.paginator.count else 0,
+        "resource_end": page_obj.end_index() if page_obj.paginator.count else 0,
         "resource_signature": build_resource_list_signature(resource_list),
         "resource_fragment_url": reverse("resources:list_fragment"),
         "resource_poll_ms": 10000,
-        "overview_metrics": build_overview_metrics(),
-        "recent_activity": build_recent_activity(),
-        "tag_count": Tag.objects.count(),
     }

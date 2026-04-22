@@ -12,7 +12,7 @@
     {% with namespace=request.resolver_match.namespace url_name=request.resolver_match.url_name %}
     <div class="app-shell">
         <aside class="app-sidebar">
-            <a href="{% url 'resources:list' %}" class="app-brand">
+            <a href="{% url 'resources:dashboard' %}" class="app-brand">
                 <span class="app-brand__mark" aria-hidden="true">
                     <span></span>
                     <span></span>
@@ -23,6 +23,13 @@
             </a>
 
             <nav class="app-nav" aria-label="Main navigation">
+                <a
+                    href="{% url 'resources:dashboard' %}"
+                    class="app-nav__link {% if namespace == 'resources' and url_name == 'dashboard' %}is-active{% endif %}"
+                >
+                    <span class="app-nav__icon" aria-hidden="true">◈</span>
+                    <span>概要</span>
+                </a>
                 <a
                     href="{% url 'resources:list' %}"
                     class="app-nav__link {% if namespace == 'resources' and url_name == 'list' or namespace == 'resources' and url_name == 'list_fragment' or namespace == 'resources' and url_name == 'detail' %}is-active{% endif %}"
@@ -74,32 +81,6 @@
                     >
                     <span class="top-search__shortcut">⌘ K</span>
                 </form>
-
-                <div class="topbar-actions">
-                    <button type="button" class="icon-button" aria-label="notifications">
-                        <span aria-hidden="true">◌</span>
-                    </button>
-                    <div class="user-chip">
-                        <span class="user-chip__avatar" aria-hidden="true">
-                            {% if request.user.is_authenticated %}
-                                {{ request.user.get_username|slice:":1"|upper }}
-                            {% else %}
-                                U
-                            {% endif %}
-                        </span>
-                        <span class="user-chip__name">
-                            {% if request.user.is_authenticated %}
-                                {% if request.user.get_full_name %}
-                                    {{ request.user.get_full_name }}
-                                {% else %}
-                                    {{ request.user.get_username }}
-                                {% endif %}
-                            {% else %}
-                                Archive User
-                            {% endif %}
-                        </span>
-                    </div>
-                </div>
             </header>
 
             <div class="workspace">

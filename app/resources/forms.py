@@ -13,6 +13,24 @@ from resources.tagging import (
 from tags.models import Tag
 
 NOTE_TEMPLATE_CHOICES = list(SaveReason.choices)
+SAVE_REASON_CUSTOM_VALUE = "__custom__"
+
+
+def build_save_reason_choices(*, blank_label: str, include_custom_option: bool = False) -> list[tuple[str, str]]:
+    predefined_values = {value for value, _ in NOTE_TEMPLATE_CHOICES}
+    custom_reasons = [
+        reason
+        for reason in Resource.objects.exclude(save_reason="")
+        .order_by("save_reason")
+        .values_list("save_reason", flat=True)
+        .distinct()
+        if reason not in predefined_values
+    ]
+    choices = [("", blank_label), *NOTE_TEMPLATE_CHOICES]
+    choices.extend((reason, reason) for reason in custom_reasons)
+    if include_custom_option:
+        choices.append((SAVE_REASON_CUSTOM_VALUE, "理由を追加"))
+    return choices
 
 
 class TagSelectionFormMixin:
@@ -32,7 +50,7 @@ class TagSelectionFormMixin:
 class ResourceForm(TagSelectionFormMixin, forms.ModelForm):
     save_reason = forms.ChoiceField(
         required=False,
-        choices=[("", "選択なし")] + NOTE_TEMPLATE_CHOICES,
+        choices=[],
         label="保存理由",
     )
     next_action = forms.CharField(
@@ -101,6 +119,10 @@ class ResourceForm(TagSelectionFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.existing_resource: Resource | None = None
         self.configure_tag_field()
+        self.fields["save_reason"].choices = build_save_reason_choices(
+            blank_label="選択なし",
+            include_custom_option=True,
+        )
         self.fields["favorite"].label = "お気に入りにする"
         self.fields["search_only"].help_text = "オンにすると通常の一覧では隠れ、検索入力時だけ表示されます。"
         self.fields["capture_images"].help_text = "オフにすると画像ファイルを保存しません。"
@@ -153,6 +175,20 @@ class ResourceForm(TagSelectionFormMixin, forms.ModelForm):
             raise forms.ValidationError("このURLは登録済みです。")
 
         return original_url
+
+    def clean_save_reason(self):
+        save_reason = (self.cleaned_data.get("save_reason") or "").strip()
+        if save_reason != SAVE_REASON_CUSTOM_VALUE:
+            return save_reason
+
+        custom_save_reason = (self.data.get("custom_save_reason") or "").strip()
+        if not custom_save_reason:
+            raise forms.ValidationError("追加する保存理由を入力してください。")
+
+        max_length = Resource._meta.get_field("save_reason").max_length
+        if len(custom_save_reason) > max_length:
+            raise forms.ValidationError(f"保存理由は {max_length} 文字以内で入力してください。")
+        return custom_save_reason
 
     def save(self, commit=True):
         resource = super().save(commit=False)
@@ -210,7 +246,7 @@ class ResourceFilterForm(forms.Form):
     )
     save_reason = forms.ChoiceField(
         required=False,
-        choices=[("", "すべて")] + NOTE_TEMPLATE_CHOICES,
+        choices=[],
         label="保存理由",
     )
     recheck_due_only = forms.BooleanField(required=False, label="再確認待ちのみ")
@@ -218,6 +254,7 @@ class ResourceFilterForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["tags"].queryset = ordered_tags_queryset()
+        self.fields["save_reason"].choices = build_save_reason_choices(blank_label="すべて")
         domains = (
             Resource.objects.exclude(domain="")
             .order_by("domain")
@@ -235,7 +272,7 @@ class ResourceBulkEditForm(TagSelectionFormMixin, forms.Form):
     )
     save_reason = forms.ChoiceField(
         required=False,
-        choices=[("", "変更しない")] + NOTE_TEMPLATE_CHOICES,
+        choices=[],
         label="保存理由",
     )
     next_action = forms.CharField(
@@ -288,6 +325,7 @@ class ResourceBulkEditForm(TagSelectionFormMixin, forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.configure_tag_field()
+        self.fields["save_reason"].choices = build_save_reason_choices(blank_label="変更しない")
 
     def clean(self):
         cleaned_data = super().clean()

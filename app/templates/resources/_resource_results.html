@@ -8,7 +8,7 @@
     <div class="section-heading">
         <div>
             <h2>保存したURL一覧</h2>
-            <p class="section-subtitle">{{ resource_count }} 件のURLを表示しています。</p>
+            <p class="section-subtitle">{{ resource_count }} 件中 {{ resource_start }} - {{ resource_end }} 件を表示しています。</p>
         </div>
         <span class="live-badge" data-autorefresh-status>自動更新中</span>
     </div>
@@ -129,7 +129,35 @@
     {% else %}
         <div class="empty-state">
             <h3>保存されたURLはまだありません</h3>
-            <p>右上の「URLを登録」から新しいURLを追加できます。</p>
+            <p>左側サイドバーの「URL登録」から新しいURLを追加できます。</p>
         </div>
+    {% endif %}
+
+    {% if pagination.is_paginated %}
+        <nav class="pagination-bar" aria-label="一覧ページネーション">
+            {% if pagination.prev_url %}
+                <a href="{{ pagination.prev_url }}" class="pagination-link">前へ</a>
+            {% else %}
+                <span class="pagination-link is-disabled">前へ</span>
+            {% endif %}
+
+            <div class="pagination-list">
+                {% for item in pagination.items %}
+                    {% if item.ellipsis %}
+                        <span class="pagination-ellipsis">…</span>
+                    {% elif item.current %}
+                        <span class="pagination-link is-current">{{ item.number }}</span>
+                    {% else %}
+                        <a href="{{ item.url }}" class="pagination-link">{{ item.number }}</a>
+                    {% endif %}
+                {% endfor %}
+            </div>
+
+            {% if pagination.next_url %}
+                <a href="{{ pagination.next_url }}" class="pagination-link">次へ</a>
+            {% else %}
+                <span class="pagination-link is-disabled">次へ</span>
+            {% endif %}
+        </nav>
     {% endif %}
 </section>

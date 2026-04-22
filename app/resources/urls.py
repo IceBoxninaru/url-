@@ -5,6 +5,7 @@ from resources import views
 app_name = "resources"
 
 urlpatterns = [
+    path("dashboard/", views.resource_dashboard, name="dashboard"),
     path("resources/", views.resource_list, name="list"),
     path("resources/live/", views.resource_list_fragment, name="list_fragment"),
     path("resources/bulk/", views.resource_bulk_edit, name="bulk_edit"),

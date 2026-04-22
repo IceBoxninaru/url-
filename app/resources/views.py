@@ -1,12 +1,19 @@
 from django.contrib import messages
-from django.http import HttpResponseNotAllowed, JsonResponse
+from django.http import HttpResponseNotAllowed, JsonResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods
 
-from resources.contexts import build_resource_detail_context, build_resource_list_context
+from resources.contexts import (
+    BULK_EDIT_PAGE_SIZE,
+    build_dashboard_context,
+    build_pagination_context,
+    build_resource_detail_context,
+    build_resource_list_context,
+    paginate_queryset,
+)
 from resources.forms import ResourceBulkEditForm, ResourceForm
 from resources.models import Resource
 from resources.services import (
@@ -44,21 +51,47 @@ def get_selected_resources(resource_ids: list[int]) -> list[Resource]:
     return [resources_by_id[resource_id] for resource_id in resource_ids if resource_id in resources_by_id]
 
 
-def build_bulk_edit_context(*, form: ResourceBulkEditForm, resource_ids: list[int], next_url: str) -> dict:
+def build_bulk_edit_context(
+    request,
+    *,
+    form: ResourceBulkEditForm,
+    resource_ids: list[int],
+    next_url: str,
+    page_number=None,
+) -> dict:
     selected_resources = get_selected_resources(resource_ids)
-    resource_candidates = list(Resource.objects.with_related()[:16])
-    resource_choices_by_id = {resource.id: resource for resource in selected_resources}
-    for resource in resource_candidates:
-        resource_choices_by_id.setdefault(resource.id, resource)
+    page_obj = paginate_queryset(
+        Resource.objects.with_related(),
+        page_number or request.GET.get("page"),
+        per_page=BULK_EDIT_PAGE_SIZE,
+    )
+    resource_choices = list(page_obj.object_list)
+    current_page_ids = {resource.id for resource in resource_choices}
+    preserved_ids = [resource_id for resource_id in resource_ids if resource_id not in current_page_ids]
+    pagination_params = QueryDict(mutable=True)
+    pagination_params.setlist("resource_ids", [str(resource_id) for resource_id in resource_ids])
+    if next_url:
+        pagination_params["next"] = next_url
     return {
         "form": form,
         "resource_ids": resource_ids,
         "selected_resource_ids": set(resource_ids),
         "selected_resources": selected_resources,
         "selected_count": len(selected_resources),
-        "resource_choices": list(resource_choices_by_id.values()),
+        "resource_choices": resource_choices,
+        "preserved_resource_ids": preserved_ids,
+        "page_obj": page_obj,
+        "pagination": build_pagination_context(page_obj, pagination_params),
+        "resource_count": page_obj.paginator.count,
+        "resource_start": page_obj.start_index() if page_obj.paginator.count else 0,
+        "resource_end": page_obj.end_index() if page_obj.paginator.count else 0,
         "next_url": next_url,
     }
+
+
+@require_GET
+def resource_dashboard(request):
+    return render(request, "resources/dashboard.html", build_dashboard_context())
 
 
 @require_GET
@@ -108,6 +141,7 @@ def resource_bulk_edit(request):
             request,
             "resources/bulk_edit.html",
             build_bulk_edit_context(
+                request,
                 form=ResourceBulkEditForm(),
                 resource_ids=resource_ids,
                 next_url=next_url,
@@ -122,7 +156,13 @@ def resource_bulk_edit(request):
         return render(
             request,
             "resources/bulk_edit.html",
-            build_bulk_edit_context(form=form, resource_ids=resource_ids, next_url=next_url),
+            build_bulk_edit_context(
+                request,
+                form=form,
+                resource_ids=resource_ids,
+                next_url=next_url,
+                page_number=request.POST.get("page"),
+            ),
             status=400,
         )
 
@@ -132,7 +172,13 @@ def resource_bulk_edit(request):
         return render(
             request,
             "resources/bulk_edit.html",
-            build_bulk_edit_context(form=form, resource_ids=resource_ids, next_url=next_url),
+            build_bulk_edit_context(
+                request,
+                form=form,
+                resource_ids=resource_ids,
+                next_url=next_url,
+                page_number=request.POST.get("page"),
+            ),
             status=400,
         )
 

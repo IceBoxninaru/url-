@@ -13,7 +13,7 @@ from django.utils import timezone
 
 from jobs.models import CaptureJob, JobStatus, JobType
 from jobs.services import run_one_job
-from resources.forms import NOTE_TEMPLATE_CHOICES
+from resources.forms import NOTE_TEMPLATE_CHOICES, SAVE_REASON_CUSTOM_VALUE
 from resources.models import LinkStatus, Resource, ResourceStatus, ReviewState
 from resources.services import (
     CaptureResult,
@@ -352,6 +352,23 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(resource.recheck_at, date(2026, 5, 1))
         self.assertEqual(resource.review_state, ReviewState.NEEDS_REVIEW)
 
+    def test_post_create_accepts_custom_save_reason(self):
+        response = self.client.post(
+            reverse("resources:create"),
+            {
+                "original_url": "https://example.com/post/custom-reason",
+                "title_manual": "Custom Reason",
+                "save_reason": SAVE_REASON_CUSTOM_VALUE,
+                "custom_save_reason": "授業メモ",
+                "capture_images": "on",
+                "capture_videos": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        resource = Resource.objects.get()
+        self.assertEqual(resource.save_reason, "授業メモ")
+
     def test_filter_by_query_tag_and_favorite(self):
         resource_a = Resource.objects.create(
             original_url="https://example.com/a",
@@ -673,7 +690,23 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "一括編集")
-        self.assertContains(response, "選択中のリソース")
+        self.assertContains(response, "選択対象のリソース")
+
+    def test_bulk_edit_page_is_paginated_ten_per_page(self):
+        for index in range(11):
+            Resource.objects.create(
+                original_url=f"https://example.com/bulk-pagination-{index}",
+                normalized_url=f"https://example.com/bulk-pagination-{index}",
+                domain="example.com",
+                title_manual=f"Bulk Pagination {index}",
+            )
+
+        response = self.client.get(reverse("resources:bulk_edit"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["resource_choices"]), 10)
+        self.assertTrue(response.context["pagination"]["is_paginated"])
+        self.assertEqual(response.context["page_obj"].paginator.count, 11)
 
     def test_list_fragment_returns_html_and_signature(self):
         resource = Resource.objects.create(
@@ -705,6 +738,26 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("resources:detail", args=[resource.id]))
         self.assertContains(response, 'value="DELETE"', html=False)
+
+    def test_list_is_paginated_ten_per_page(self):
+        for index in range(11):
+            Resource.objects.create(
+                original_url=f"https://example.com/paginated-{index}",
+                normalized_url=f"https://example.com/paginated-{index}",
+                domain="example.com",
+                title_manual=f"Paginated {index}",
+            )
+
+        response = self.client.get(reverse("resources:list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["resources"]), 10)
+        self.assertTrue(response.context["pagination"]["is_paginated"])
+        self.assertEqual(response.context["page_obj"].paginator.count, 11)
+
+        second_page = self.client.get(reverse("resources:list"), {"page": 2})
+        self.assertEqual(second_page.status_code, 200)
+        self.assertEqual(len(second_page.context["resources"]), 1)
 
     def test_detail_shows_snapshot_before_edit_section(self):
         resource = Resource.objects.create(

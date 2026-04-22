@@ -50,6 +50,21 @@
                         {{ form.save_reason.errors }}
                     </label>
 
+                    <label
+                        class="field-group save-reason-custom-field {% if form.save_reason.value != '__custom__' %}is-hidden{% endif %}"
+                        data-save-reason-custom
+                    >
+                        <span class="field-label">追加する保存理由</span>
+                        <input
+                            type="text"
+                            name="custom_save_reason"
+                            value="{{ form.data.custom_save_reason|default:'' }}"
+                            maxlength="40"
+                            placeholder="例: 授業メモ / 比較候補 / 参考資料"
+                        >
+                        <span class="field-help">新しい理由を入力すると、今回の保存理由として使えます。</span>
+                    </label>
+
                     <label class="field-group">
                         <span class="field-label">{{ form.next_action.label }}</span>
                         {{ form.next_action }}

@@ -25,18 +25,30 @@
     <form method="post" action="{% url 'resources:bulk_edit' %}" class="workspace-stack" data-bulk-selection-root>
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ next_url }}">
+        <input type="hidden" name="page" value="{{ page_obj.number }}">
+        {% for resource_id in preserved_resource_ids %}
+            <input type="hidden" name="resource_ids" value="{{ resource_id }}" data-bulk-persisted-selection>
+        {% endfor %}
 
         <section class="panel">
             <div class="section-heading">
                 <div>
-                    <h2>選択中のリソース</h2>
-                    <p class="section-subtitle"><span data-bulk-selected-count>{{ selected_count }}</span> 件を選択中です。</p>
+                    <h2>選択対象のリソース</h2>
+                    <p class="section-subtitle">{{ resource_count }} 件中 {{ resource_start }} - {{ resource_end }} 件を表示中 / <span data-bulk-selected-count>{{ selected_count }}</span> 件を選択中です。</p>
                 </div>
                 <label class="toggle-inline">
                     <input type="checkbox" data-bulk-select-all>
                     <span>すべて選択</span>
                 </label>
             </div>
+
+            {% if selected_resources %}
+                <div class="selected-resource-summary">
+                    {% for resource in selected_resources %}
+                        <a href="{{ resource.get_absolute_url }}" class="tag-chip tag-chip--soft">{{ resource.display_title }}</a>
+                    {% endfor %}
+                </div>
+            {% endif %}
 
             {% if resource_choices %}
                 <div class="table-scroll">
@@ -89,6 +101,34 @@
                         </tbody>
                     </table>
                 </div>
+
+                {% if pagination.is_paginated %}
+                    <nav class="pagination-bar" aria-label="一括編集ページネーション">
+                        {% if pagination.prev_url %}
+                            <a href="{{ pagination.prev_url }}" class="pagination-link" data-bulk-page-link>前へ</a>
+                        {% else %}
+                            <span class="pagination-link is-disabled">前へ</span>
+                        {% endif %}
+
+                        <div class="pagination-list">
+                            {% for item in pagination.items %}
+                                {% if item.ellipsis %}
+                                    <span class="pagination-ellipsis">…</span>
+                                {% elif item.current %}
+                                    <span class="pagination-link is-current">{{ item.number }}</span>
+                                {% else %}
+                                    <a href="{{ item.url }}" class="pagination-link" data-bulk-page-link>{{ item.number }}</a>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+
+                        {% if pagination.next_url %}
+                            <a href="{{ pagination.next_url }}" class="pagination-link" data-bulk-page-link>次へ</a>
+                        {% else %}
+                            <span class="pagination-link is-disabled">次へ</span>
+                        {% endif %}
+                    </nav>
+                {% endif %}
             {% else %}
                 <div class="empty-state">
                     <h3>一括編集できるURLがまだありません</h3>

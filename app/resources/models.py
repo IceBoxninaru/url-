@@ -141,7 +141,7 @@ class Resource(models.Model):
     domain = models.CharField(max_length=255, db_index=True)
     title_manual = models.CharField(max_length=255, blank=True)
     note = models.TextField(blank=True)
-    save_reason = models.CharField(max_length=40, choices=SaveReason.choices, blank=True, db_index=True)
+    save_reason = models.CharField(max_length=40, blank=True, db_index=True)
     next_action = models.CharField(max_length=255, blank=True)
     recheck_at = models.DateField(null=True, blank=True, db_index=True)
     favorite = models.BooleanField(default=False)
@@ -222,6 +222,9 @@ class Resource(models.Model):
 
     def get_absolute_url(self):
         return reverse("resources:detail", args=[self.pk])
+
+    def get_save_reason_display(self) -> str:
+        return dict(SaveReason.choices).get(self.save_reason, self.save_reason)
 
     def update_domain_from_url(self):
         parsed = urlparse(self.normalized_url)

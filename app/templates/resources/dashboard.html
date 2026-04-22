@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}概要 | URL Archive{% endblock %}
+
+{% block content %}
+<div class="workspace-stack">
+    <section class="page-header">
+        <div>
+            <h1>概要</h1>
+            <p class="page-subtitle">要確認、再確認待ち、総URL数、お気に入り、最近の動きをここでまとめて確認できます。</p>
+        </div>
+    </section>
+
+    <section class="metric-grid">
+        {% for metric in overview_metrics %}
+            <article class="metric-card">
+                <div class="metric-card__icon metric-card__icon--{{ metric.tone }}">{{ metric.icon|slice:":1"|upper }}</div>
+                <div class="metric-card__body">
+                    <p class="metric-card__label">{{ metric.label }}</p>
+                    <p class="metric-card__value">{{ metric.count }}</p>
+                    <p class="metric-card__delta">前月比 {{ metric.delta_prefix }}{{ metric.delta }} 件</p>
+                </div>
+            </article>
+        {% endfor %}
+    </section>
+
+    <div class="dashboard-layout">
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <h2>最近の動き</h2>
+                    <p class="section-subtitle">直近の取得や更新を時系列で表示します。</p>
+                </div>
+            </div>
+
+            <div class="activity-list">
+                {% for item in recent_activity %}
+                    <article class="activity-item">
+                        <span class="activity-item__icon activity-item__icon--{{ item.tone }}">{{ item.icon|slice:":1"|upper }}</span>
+                        <div>
+                            <p class="activity-item__title">{{ item.title }}</p>
+                            <p class="activity-item__meta">
+                                <a href="{{ item.resource.get_absolute_url }}">{{ item.resource.display_title }}</a>
+                            </p>
+                            <p class="activity-item__time">{{ item.timestamp|timesince }}前</p>
+                        </div>
+                    </article>
+                {% empty %}
+                    <p class="muted">まだ最近の動きはありません。</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <aside class="side-stack">
+            <section class="panel info-card">
+                <h2>運用状況</h2>
+                <ul class="bullet-list">
+                    <li>登録済みタグは {{ tag_count }} 件です。</li>
+                    <li>総ジョブ数は {{ job_count }} 件です。</li>
+                    <li>実行待ち・再試行待ちのジョブは {{ queued_job_count }} 件です。</li>
+                </ul>
+            </section>
+
+            <section class="panel info-card">
+                <h2>クイック移動</h2>
+                <div class="quick-link-grid">
+                    <a href="{% url 'resources:list' %}" class="list-link">一覧を見る</a>
+                    <a href="{% url 'resources:create' %}" class="list-link">URLを登録する</a>
+                    <a href="{% url 'resources:bulk_edit' %}" class="list-link">一括編集する</a>
+                    <a href="{% url 'resources:settings' %}" class="list-link">設定を開く</a>
+                </div>
+            </section>
+        </aside>
+    </div>
+</div>
+{% endblock %}

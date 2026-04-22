@@ -122,9 +122,25 @@ function initTabs() {
 
 function initBulkSelection() {
   document.querySelectorAll("[data-bulk-selection-root]").forEach((root) => {
+    const collectSelectedIds = () => {
+      const selectedIds = new Set();
+      root.querySelectorAll("[data-bulk-persisted-selection]").forEach((input) => {
+        if (input instanceof HTMLInputElement && input.value) {
+          selectedIds.add(input.value);
+        }
+      });
+      root.querySelectorAll("[data-bulk-select-item]:checked").forEach((input) => {
+        if (input instanceof HTMLInputElement && input.value) {
+          selectedIds.add(input.value);
+        }
+      });
+      return Array.from(selectedIds);
+    };
+
     const sync = () => {
       const checkboxes = Array.from(root.querySelectorAll("[data-bulk-select-item]"));
-      const checkedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+      const checkedOnPage = checkboxes.filter((checkbox) => checkbox.checked).length;
+      const checkedCount = collectSelectedIds().length;
       const countNode = root.querySelector("[data-bulk-selected-count]");
       const selectAllNode = root.querySelector("[data-bulk-select-all]");
 
@@ -132,8 +148,8 @@ function initBulkSelection() {
         countNode.textContent = String(checkedCount);
       }
       if (selectAllNode instanceof HTMLInputElement) {
-        selectAllNode.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
-        selectAllNode.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+        selectAllNode.checked = checkboxes.length > 0 && checkedOnPage === checkboxes.length;
+        selectAllNode.indeterminate = checkedOnPage > 0 && checkedOnPage < checkboxes.length;
       }
     };
 
@@ -150,6 +166,42 @@ function initBulkSelection() {
       sync();
     });
 
+    root.querySelectorAll("[data-bulk-page-link]").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        const currentLink = event.currentTarget;
+        if (!(currentLink instanceof HTMLAnchorElement)) {
+          return;
+        }
+        event.preventDefault();
+        const url = new URL(currentLink.href, window.location.origin);
+        url.searchParams.delete("resource_ids");
+        collectSelectedIds().forEach((resourceId) => {
+          url.searchParams.append("resource_ids", resourceId);
+        });
+        window.location.href = url.toString();
+      });
+    });
+
+    sync();
+  });
+}
+
+function initSaveReasonCustomField() {
+  const customValue = "__custom__";
+  document.querySelectorAll("select[name='save_reason']").forEach((selectNode) => {
+    if (!(selectNode instanceof HTMLSelectElement)) {
+      return;
+    }
+    const wrapper = selectNode.closest("form")?.querySelector("[data-save-reason-custom]");
+    if (!(wrapper instanceof HTMLElement)) {
+      return;
+    }
+
+    const sync = () => {
+      wrapper.classList.toggle("is-hidden", selectNode.value !== customValue);
+    };
+
+    selectNode.addEventListener("change", sync);
     sync();
   });
 }
@@ -158,4 +210,5 @@ document.addEventListener("DOMContentLoaded", () => {
   initResourceAutoRefresh();
   initTabs();
   initBulkSelection();
+  initSaveReasonCustomField();
 });
