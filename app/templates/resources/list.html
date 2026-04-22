@@ -3,61 +3,125 @@
 {% block title %}一覧 | URL Archive{% endblock %}
 
 {% block content %}
-<section class="panel filter-panel">
-    <form method="get" action="{% url 'resources:list' %}" class="filter-toolbar">
-        <div class="filter-toolbar__primary">
-            <label class="filter-search">
-                <span class="filter-label">検索</span>
-                {{ filter_form.q }}
-            </label>
-            <label class="filter-inline">
-                <span class="filter-label">ドメイン</span>
-                {{ filter_form.domain }}
-            </label>
-            <label class="filter-inline">
-                <span class="filter-label">取得状態</span>
-                {{ filter_form.status }}
-            </label>
-            <label class="filter-inline">
-                <span class="filter-label">見直し</span>
-                {{ filter_form.review_state }}
-            </label>
-            <label class="filter-inline">
-                <span class="filter-label">保存理由</span>
-                {{ filter_form.save_reason }}
-            </label>
-            <label class="checkbox-chip">
-                {{ filter_form.favorite_only }}
-                <span>お気に入りのみ</span>
-            </label>
-            <label class="checkbox-chip">
-                {{ filter_form.recheck_due_only }}
-                <span>再確認待ちのみ</span>
-            </label>
+<div class="workspace-stack">
+    <section class="page-header">
+        <div>
+            <h1>保存したURL一覧</h1>
+            <p class="page-subtitle">保存したURLの取得状態や見直し状況を確認・管理できます。</p>
         </div>
-
-        <div class="filter-toolbar__actions">
-            <button type="submit">絞り込む</button>
-            <a href="{% url 'resources:list' %}" class="text-link">リセット</a>
+        <div class="page-actions">
+            <a href="{% url 'resources:bulk_edit' %}" class="button button--ghost">一括編集</a>
+            <a href="{% url 'resources:create' %}" class="button button--primary">URLを登録</a>
         </div>
+    </section>
 
-        <details class="filter-advanced">
-            <summary>タグで絞り込む</summary>
-            <div class="filter-advanced__body">
-                <p class="muted filter-hint">複数選択すると、すべてのタグを持つ URL に絞り込みます。</p>
-                <div class="tag-filter-options">
-                    {{ filter_form.tags }}
+    <div class="dashboard-layout">
+        <div class="dashboard-main">
+            <section class="metric-grid">
+                {% for metric in overview_metrics %}
+                    <article class="metric-card">
+                        <div class="metric-card__icon metric-card__icon--{{ metric.tone }}">{{ metric.icon|slice:":1"|upper }}</div>
+                        <div class="metric-card__body">
+                            <p class="metric-card__label">{{ metric.label }}</p>
+                            <p class="metric-card__value">{{ metric.count }}</p>
+                            <p class="metric-card__delta">前月比 {{ metric.delta_prefix }}{{ metric.delta }} 件</p>
+                        </div>
+                    </article>
+                {% endfor %}
+            </section>
+
+            <section class="panel">
+                <div class="section-heading">
+                    <div>
+                        <h2>フィルター</h2>
+                        <p class="section-subtitle">キーワード、ドメイン、タグ、見直し状態で絞り込めます。</p>
+                    </div>
+                    <a href="{% url 'resources:list' %}" class="button button--soft">フィルターをクリア</a>
                 </div>
-            </div>
-        </details>
-    </form>
-</section>
 
-<section class="panel filter-panel">
-    <p class="muted filter-hint">
-        「検索時のみ表示」にした URL は通常一覧では隠れます。検索欄に文字を入れると対象だけ表示されます。
-    </p>
-</section>
+                <form method="get" action="{% url 'resources:list' %}" class="filter-form">
+                    <div class="filter-grid">
+                        <label class="field-group field-group--wide">
+                            <span class="field-label">キーワード検索</span>
+                            {{ filter_form.q }}
+                        </label>
+                        <label class="field-group">
+                            <span class="field-label">ドメイン</span>
+                            {{ filter_form.domain }}
+                        </label>
+                        <label class="field-group field-group--wide">
+                            <span class="field-label">タグ</span>
+                            {{ filter_form.tags }}
+                        </label>
+                        <label class="field-group">
+                            <span class="field-label">取得状態</span>
+                            {{ filter_form.status }}
+                        </label>
+                        <label class="field-group">
+                            <span class="field-label">見直し状態</span>
+                            {{ filter_form.review_state }}
+                        </label>
+                        <label class="field-group">
+                            <span class="field-label">保存理由</span>
+                            {{ filter_form.save_reason }}
+                        </label>
+                    </div>
 
-{% include "resources/_resource_results.html" %}
+                    <div class="filter-inline-row">
+                        <label class="toggle-inline">
+                            {{ filter_form.favorite_only }}
+                            <span>お気に入りのみ</span>
+                        </label>
+                        <label class="toggle-inline">
+                            {{ filter_form.recheck_due_only }}
+                            <span>再確認待ちのみ</span>
+                        </label>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="button button--primary">絞り込む</button>
+                    </div>
+                </form>
+            </section>
+
+            {% include "resources/_resource_results.html" %}
+        </div>
+
+        <aside class="dashboard-side">
+            <section class="panel">
+                <div class="section-heading">
+                    <div>
+                        <h2>最近の動き</h2>
+                        <p class="section-subtitle">直近の取得や更新を表示します。</p>
+                    </div>
+                </div>
+                <div class="activity-list">
+                    {% for item in recent_activity %}
+                        <article class="activity-item">
+                            <span class="activity-item__icon activity-item__icon--{{ item.tone }}">{{ item.icon|slice:":1"|upper }}</span>
+                            <div>
+                                <p class="activity-item__title">{{ item.title }}</p>
+                                <p class="activity-item__meta">
+                                    <a href="{{ item.resource.get_absolute_url }}">{{ item.resource.display_title }}</a>
+                                </p>
+                                <p class="activity-item__time">{{ item.timestamp|timesince }}前</p>
+                            </div>
+                        </article>
+                    {% empty %}
+                        <p class="muted">まだ最近の動きはありません。</p>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="panel info-card">
+                <h2>運用メモ</h2>
+                <ul class="bullet-list">
+                    <li>通常一覧には「検索時のみ表示」のURLは出しません。</li>
+                    <li>再確認待ちは `再確認日` が今日以前のURLです。</li>
+                    <li>登録済みタグは現在 {{ tag_count }} 件です。</li>
+                </ul>
+            </section>
+        </aside>
+    </div>
+</div>
 {% endblock %}

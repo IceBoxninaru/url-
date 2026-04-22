@@ -1,30 +1,167 @@
 {% extends "base.html" %}
 
-{% block title %}新規追加 | URL Archive{% endblock %}
+{% block title %}URL登録 | URL Archive{% endblock %}
 
 {% block content %}
-<section class="panel create-panel">
-    <div class="panel-header">
+<div class="workspace-stack">
+    <section class="page-header">
         <div>
-            <p class="eyebrow">Compose</p>
-            <h2>URLを追加</h2>
+            <h1>URLを登録</h1>
+            <p class="page-subtitle">新しいURLを保存し、管理に必要な情報を設定します。</p>
         </div>
-        <a href="{% url 'resources:list' %}" class="text-link">一覧へ戻る</a>
+    </section>
+
+    <div class="detail-layout">
+        <section class="panel">
+            {% if form.non_field_errors %}
+                <div class="form-errors">
+                    {{ form.non_field_errors }}
+                </div>
+            {% endif %}
+
+            <form method="post" action="{% url 'resources:create' %}" class="form-stack">
+                {% csrf_token %}
+
+                <div class="form-grid">
+                    <label class="field-group field-group--full">
+                        <span class="field-label">{{ form.original_url.label }} <span class="required-dot">*</span></span>
+                        {{ form.original_url }}
+                        {% if form.original_url.help_text %}
+                            <span class="field-help">{{ form.original_url.help_text }}</span>
+                        {% endif %}
+                        {{ form.original_url.errors }}
+                    </label>
+
+                    <label class="field-group field-group--full">
+                        <span class="field-label">{{ form.title_manual.label }}</span>
+                        {{ form.title_manual }}
+                        {% if form.title_manual.help_text %}
+                            <span class="field-help">{{ form.title_manual.help_text }}</span>
+                        {% endif %}
+                        {{ form.title_manual.errors }}
+                    </label>
+
+                    <label class="field-group">
+                        <span class="field-label">{{ form.save_reason.label }}</span>
+                        {{ form.save_reason }}
+                        {% if form.save_reason.help_text %}
+                            <span class="field-help">{{ form.save_reason.help_text }}</span>
+                        {% endif %}
+                        {{ form.save_reason.errors }}
+                    </label>
+
+                    <label class="field-group">
+                        <span class="field-label">{{ form.next_action.label }}</span>
+                        {{ form.next_action }}
+                        {% if form.next_action.help_text %}
+                            <span class="field-help">{{ form.next_action.help_text }}</span>
+                        {% endif %}
+                        {{ form.next_action.errors }}
+                    </label>
+
+                    <label class="field-group">
+                        <span class="field-label">{{ form.recheck_at.label }}</span>
+                        {{ form.recheck_at }}
+                        {% if form.recheck_at.help_text %}
+                            <span class="field-help">{{ form.recheck_at.help_text }}</span>
+                        {% endif %}
+                        {{ form.recheck_at.errors }}
+                    </label>
+
+                    <label class="field-group">
+                        <span class="field-label">{{ form.review_state.label }}</span>
+                        {{ form.review_state }}
+                        {% if form.review_state.help_text %}
+                            <span class="field-help">{{ form.review_state.help_text }}</span>
+                        {% endif %}
+                        {{ form.review_state.errors }}
+                    </label>
+
+                    <label class="field-group field-group--full">
+                        <span class="field-label">{{ form.note.label }}</span>
+                        {{ form.note }}
+                        {% if form.note.help_text %}
+                            <span class="field-help">{{ form.note.help_text }}</span>
+                        {% endif %}
+                        {{ form.note.errors }}
+                    </label>
+
+                    <div class="field-group field-group--full">
+                        <span class="field-label">{{ form.tags.label }}</span>
+                        <div class="tag-selector-grid">
+                            {{ form.tags }}
+                        </div>
+                        {{ form.tags.errors }}
+                    </div>
+
+                    <label class="field-group field-group--full">
+                        <span class="field-label">{{ form.new_tags.label }}</span>
+                        {{ form.new_tags }}
+                        {% if form.new_tags.help_text %}
+                            <span class="field-help">{{ form.new_tags.help_text }}</span>
+                        {% endif %}
+                        {{ form.new_tags.errors }}
+                    </label>
+                </div>
+
+                <div class="toggle-grid">
+                    <label class="toggle-card">
+                        {{ form.favorite }}
+                        <span class="toggle-card__title">お気に入りにする</span>
+                        <span class="toggle-card__text">重要なURLとして管理します。</span>
+                    </label>
+                    <label class="toggle-card">
+                        {{ form.search_only }}
+                        <span class="toggle-card__title">一覧には出さず検索時のみ表示</span>
+                        <span class="toggle-card__text">通常一覧では隠し、検索結果から参照します。</span>
+                    </label>
+                    <label class="toggle-card">
+                        {{ form.capture_images }}
+                        <span class="toggle-card__title">画像を保存する</span>
+                        <span class="toggle-card__text">ページ内の画像ファイルも保存対象にします。</span>
+                    </label>
+                    <label class="toggle-card">
+                        {{ form.capture_videos }}
+                        <span class="toggle-card__title">動画を保存する</span>
+                        <span class="toggle-card__text">ページ内の動画ファイルも保存対象にします。</span>
+                    </label>
+                </div>
+
+                <div class="form-actions form-actions--split">
+                    <div class="form-actions__primary">
+                        <button type="submit" class="button button--primary">保存して取得開始</button>
+                        <button type="button" class="button button--ghost" disabled>下書き保存</button>
+                    </div>
+                    <a href="{% url 'resources:list' %}" class="button button--text">キャンセル</a>
+                </div>
+            </form>
+        </section>
+
+        <aside class="side-stack">
+            <section class="panel info-card">
+                <h2>登録のポイント</h2>
+                <ul class="bullet-list">
+                    <li>正確なURLを入力すると取得精度が上がります。</li>
+                    <li>手動タイトルを入れると一覧で識別しやすくなります。</li>
+                    <li>保存理由と次の行動を入れると後から見直しやすくなります。</li>
+                    <li>再確認日を設定すると、見直しタイミングを管理できます。</li>
+                </ul>
+            </section>
+
+            <section class="panel info-card">
+                <h2>取得オプション</h2>
+                <ul class="bullet-list">
+                    <li>画像保存をオンにすると画像ファイルも保管します。</li>
+                    <li>動画保存をオンにすると動画ファイルも保管します。</li>
+                    <li>検索時のみ表示を使うと通常一覧を整理できます。</li>
+                </ul>
+            </section>
+
+            <section class="panel info-card info-card--accent">
+                <h2>取得について</h2>
+                <p>保存後すぐに取得ジョブを作成します。取得結果は一覧と詳細画面で確認できます。</p>
+            </section>
+        </aside>
     </div>
-
-    <p class="muted">
-        気になったページの URL、タイトル、メモ、タグをここで入力します。
-        既存タグの選択に加えて新しいタグも1行ずつその場で追加できます。
-        登録すると取得ジョブがすぐに作成されます。
-    </p>
-
-    <form method="post" action="{% url 'resources:create' %}" class="form-stack create-form">
-        {% csrf_token %}
-        {{ form.as_p }}
-        <div class="action-row action-row--start">
-            <button type="submit">登録して取得</button>
-            <a href="{% url 'resources:list' %}" class="text-link">キャンセル</a>
-        </div>
-    </form>
-</section>
+</div>
 {% endblock %}

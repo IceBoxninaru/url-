@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+
+{% block title %}スナップショット履歴 | URL Archive{% endblock %}
+
+{% block content %}
+<div class="workspace-stack">
+    <section class="page-header">
+        <div>
+            <h1>スナップショット履歴</h1>
+            <p class="page-subtitle">過去の取得結果や変更差分を比較・確認できます。</p>
+        </div>
+        {% if snapshot %}
+            <div class="page-actions">
+                <button type="button" class="button button--ghost" disabled>比較対象を選ぶ</button>
+                <a href="{{ active_resource.get_absolute_url }}" class="button button--ghost">この時点を表示</a>
+                <form method="post" action="{% url 'resources:capture' active_resource.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="button button--primary">再取得</button>
+                </form>
+                <button type="button" class="button button--ghost" disabled>⋯</button>
+            </div>
+        {% endif %}
+    </section>
+
+    {% if snapshot %}
+        <section class="panel snapshot-resource-card">
+            <div>
+                <h2>{{ active_resource.display_title }}</h2>
+                <p class="page-subtitle">{{ active_resource.domain }} / 最終取得 {{ snapshot.fetched_at|date:"Y/m/d H:i" }}</p>
+            </div>
+            <div class="status-row">
+                <span class="status-chip status-chip--resource-{% if snapshot.error_message %}fetch_failed{% else %}active{% endif %}">
+                    {% if snapshot.error_message %}エラー{% else %}取得済み{% endif %}
+                </span>
+                <span class="tone-chip tone-chip--neutral">総スナップショット数 {{ timeline|length }} 件</span>
+            </div>
+        </section>
+
+        <div class="snapshot-layout">
+            <aside class="panel snapshot-sidebar">
+                <div class="section-heading">
+                    <div>
+                        <h2>スナップショット一覧</h2>
+                        <p class="section-subtitle">同じURLの取得履歴です。</p>
+                    </div>
+                </div>
+
+                <div class="timeline-list">
+                    {% for item in timeline %}
+                        <a
+                            href="{% url 'snapshots:detail' item.id %}"
+                            class="timeline-item {% if item.id == snapshot.id %}is-active{% endif %}"
+                        >
+                            <div>
+                                <strong>#{{ item.snapshot_no }}</strong>
+                                <p class="muted">{{ item.fetched_at|date:"Y/m/d H:i" }}</p>
+                            </div>
+                            <div class="timeline-item__meta">
+                                <span class="tone-chip tone-chip--soft">{{ item.get_fetch_method_display }}</span>
+                                <span class="status-chip status-chip--resource-{% if item.error_message %}fetch_failed{% else %}active{% endif %}">
+                                    {% if item.error_message %}エラー{% else %}成功{% endif %}
+                                </span>
+                            </div>
+                        </a>
+                    {% empty %}
+                        <p class="muted">履歴はまだありません。</p>
+                    {% endfor %}
+                </div>
+            </aside>
+
+            <div class="snapshot-main">
+                <section class="panel">
+                    <div class="section-heading">
+                        <div>
+                            <h2>スナップショット #{{ snapshot.snapshot_no }}</h2>
+                            <p class="section-subtitle">{{ snapshot.fetched_at|date:"Y/m/d H:i" }}</p>
+                        </div>
+                        {% if snapshot_status %}
+                            <span class="status-chip status-chip--resource-{% if snapshot_status.tone == 'danger' %}fetch_failed{% else %}active{% endif %}">{{ snapshot_status.label }}</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="meta-summary">
+                        <div class="meta-item">
+                            <span class="meta-item__label">ページタイトル</span>
+                            <div class="meta-item__value">{{ snapshot.page_title|default:"-" }}</div>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-item__label">HTTPステータス</span>
+                            <div class="meta-item__value">{{ snapshot.http_status|default:"-" }}</div>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-item__label">サイト名</span>
+                            <div class="meta-item__value">{{ snapshot.site_name|default:"-" }}</div>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-item__label">取得URL</span>
+                            <div class="meta-item__value"><a href="{{ snapshot.fetch_url }}" target="_blank" rel="noreferrer">{{ snapshot.fetch_url }}</a></div>
+                        </div>
+                    </div>
+
+                    <div class="artifact-grid">
+                        {% for artifact in artifact_cards %}
+                            <article class="artifact-card">
+                                <p class="artifact-card__label">{{ artifact.label }}</p>
+                                <p class="artifact-card__value">{{ artifact.count }}</p>
+                                <p class="artifact-card__meta">{{ artifact.meta }}</p>
+                            </article>
+                        {% endfor %}
+                    </div>
+                </section>
+
+                <div class="detail-layout">
+                    <section class="panel">
+                        <div class="section-heading">
+                            <div>
+                                <h2>スクリーンショット</h2>
+                                <p class="section-subtitle">保存されたページ画像のプレビューです。</p>
+                            </div>
+                        </div>
+                        {% if snapshot.screenshot_full_path %}
+                            <a href="/{{ snapshot.screenshot_full_path }}" target="_blank" rel="noreferrer" class="snapshot-preview-card">
+                                <img src="/{{ snapshot.screenshot_full_path }}" alt="Snapshot screenshot" class="screenshot-preview">
+                            </a>
+                        {% else %}
+                            <p class="empty-copy">スクリーンショットは保存されていません。</p>
+                        {% endif %}
+                    </section>
+
+                    <section class="panel">
+                        <div class="section-heading">
+                            <div>
+                                <h2>前回との差分</h2>
+                                <p class="section-subtitle">直前のスナップショットとの差分です。</p>
+                            </div>
+                        </div>
+                        {% if snapshot_diff.previous_snapshot %}
+                            <p class="muted">比較対象: <a href="{{ snapshot_diff.previous_snapshot.get_absolute_url }}">#{{ snapshot_diff.previous_snapshot.snapshot_no }}</a></p>
+                            {% if snapshot_diff.items %}
+                                <ul class="diff-list">
+                                    {% for item in snapshot_diff.items %}
+                                        <li>
+                                            <strong>{{ item.label }}</strong>
+                                            <span>{{ item.before }}</span>
+                                            <span class="diff-arrow">→</span>
+                                            <span>{{ item.after }}</span>
+                                        </li>
+                                    {% endfor %}
+                                </ul>
+                            {% else %}
+                                <p class="empty-copy">大きな変更はありません。</p>
+                            {% endif %}
+                        {% else %}
+                            <p class="empty-copy">比較対象のスナップショットはありません。</p>
+                        {% endif %}
+                    </section>
+                </div>
+
+                <div class="detail-layout">
+                    <section class="panel">
+                        <div class="section-heading">
+                            <div>
+                                <h2>取得ログ</h2>
+                                <p class="section-subtitle">保存結果から組み立てたサマリーです。</p>
+                            </div>
+                        </div>
+                        <div class="log-list">
+                            <div class="log-row">
+                                <span class="log-row__time">{{ snapshot.fetched_at|date:"Y/m/d H:i:s" }}</span>
+                                <span>取得を開始しました。</span>
+                            </div>
+                            <div class="log-row">
+                                <span class="log-row__time">HTTP {{ snapshot.http_status|default:"-" }}</span>
+                                <span>{{ snapshot.get_fetch_method_display }} でページを取得しました。</span>
+                            </div>
+                            <div class="log-row">
+                                <span class="log-row__time">保存結果</span>
+                                <span>スクリーンショット {% if snapshot.screenshot_full_path %}1{% else %}0{% endif %} 件 / 画像 {{ snapshot.image_count }} 件 / 動画 {{ snapshot.video_count }} 件</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="panel">
+                        <div class="section-heading">
+                            <div>
+                                <h2>AI / エラー情報</h2>
+                                <p class="section-subtitle">タグ候補とエラー内容です。</p>
+                            </div>
+                        </div>
+                        <div class="stack-list">
+                            <div>
+                                <strong>タグ候補</strong>
+                                <div class="tag-chip-list">
+                                    {% for tag in tag_candidates %}
+                                        <span class="tag-chip tag-chip--soft">{{ tag }}</span>
+                                    {% empty %}
+                                        <span class="muted">候補なし</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <div>
+                                <strong>類似リソース</strong>
+                                <div class="stack-list">
+                                    {% for similar in similar_resources %}
+                                        <a href="{{ similar.get_absolute_url }}" class="list-link">{{ similar.display_title }}</a>
+                                    {% empty %}
+                                        <span class="muted">候補なし</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <div>
+                                <strong>エラー情報</strong>
+                                <p>{{ snapshot.error_message|default:"エラーは検出されませんでした。" }}</p>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    {% else %}
+        <section class="panel">
+            <div class="empty-state">
+                <h3>スナップショットはまだありません</h3>
+                <p>URLを登録して取得すると、この画面に履歴が表示されます。</p>
+            </div>
+        </section>
+    {% endif %}
+</div>
+{% endblock %}

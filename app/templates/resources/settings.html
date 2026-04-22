@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}設定 | URL Archive{% endblock %}
+
+{% block content %}
+<div class="workspace-stack">
+    <section class="page-header">
+        <div>
+            <h1>設定</h1>
+            <p class="page-subtitle">タグ管理やジョブ確認など、運用に関わる設定をまとめています。</p>
+        </div>
+    </section>
+
+    <div class="settings-grid">
+        <section class="panel settings-card">
+            <h2>タグ管理</h2>
+            <p>登録済みタグは {{ tag_count }} 件です。色や並び順も編集できます。</p>
+            <a href="{% url 'tags:list' %}" class="button button--primary">タグを管理する</a>
+        </section>
+
+        <section class="panel settings-card">
+            <h2>ジョブ管理</h2>
+            <p>キュー中または再試行待ちのジョブは {{ queued_job_count }} 件です。総ジョブ数は {{ job_count }} 件です。</p>
+            <a href="{% url 'jobs:list' %}" class="button button--primary">ジョブを確認する</a>
+        </section>
+    </div>
+
+    <section class="panel">
+        <div class="section-heading">
+            <div>
+                <h2>直近のジョブ</h2>
+                <p class="section-subtitle">最近更新されたジョブを表示しています。</p>
+            </div>
+        </div>
+
+        <table class="data-table job-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>対象</th>
+                    <th>状態</th>
+                    <th>種類</th>
+                    <th>更新日時</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                    <tr>
+                        <td data-label="ID">{{ job.id }}</td>
+                        <td data-label="対象"><a href="{{ job.resource.get_absolute_url }}">{{ job.resource.display_title }}</a></td>
+                        <td data-label="状態">{{ job.get_status_display }}</td>
+                        <td data-label="種類">{{ job.get_job_type_display }}</td>
+                        <td data-label="更新日時">{{ job.updated_at|date:"Y/m/d H:i" }}</td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="5">ジョブはまだありません。</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}

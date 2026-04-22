@@ -14,6 +14,8 @@ from resources.services import (
     delete_resource_with_artifacts,
     enqueue_capture_job,
 )
+from jobs.models import CaptureJob, JobStatus
+from tags.models import Tag
 
 
 def normalize_next_url(raw_next: str) -> str:
@@ -44,11 +46,17 @@ def get_selected_resources(resource_ids: list[int]) -> list[Resource]:
 
 def build_bulk_edit_context(*, form: ResourceBulkEditForm, resource_ids: list[int], next_url: str) -> dict:
     selected_resources = get_selected_resources(resource_ids)
+    resource_candidates = list(Resource.objects.with_related()[:16])
+    resource_choices_by_id = {resource.id: resource for resource in selected_resources}
+    for resource in resource_candidates:
+        resource_choices_by_id.setdefault(resource.id, resource)
     return {
         "form": form,
         "resource_ids": resource_ids,
+        "selected_resource_ids": set(resource_ids),
         "selected_resources": selected_resources,
         "selected_count": len(selected_resources),
+        "resource_choices": list(resource_choices_by_id.values()),
         "next_url": next_url,
     }
 
@@ -96,9 +104,6 @@ def resource_bulk_edit(request):
     if request.method == "GET":
         next_url = normalize_next_url(request.GET.get("next", ""))
         resource_ids = parse_resource_ids(request.GET.getlist("resource_ids"))
-        if not resource_ids:
-            messages.error(request, "一括編集するURLを1件以上選択してください。")
-            return redirect(next_url)
         return render(
             request,
             "resources/bulk_edit.html",
@@ -114,7 +119,12 @@ def resource_bulk_edit(request):
     resource_ids = parse_resource_ids(request.POST.getlist("resource_ids"))
     if not resource_ids:
         messages.error(request, "一括操作するURLを1件以上選択してください。")
-        return redirect(next_url)
+        return render(
+            request,
+            "resources/bulk_edit.html",
+            build_bulk_edit_context(form=form, resource_ids=resource_ids, next_url=next_url),
+            status=400,
+        )
 
     if not form.is_valid():
         first_error = next((error for errors in form.errors.values() for error in errors), "一括更新に失敗しました。")
@@ -176,12 +186,24 @@ def resource_capture(request, pk: int):
 
 @require_GET
 def resource_snapshots(request, pk: int):
-    resource = get_object_or_404(Resource.objects.with_related(), pk=pk)
+    resource = get_object_or_404(Resource, pk=pk)
+    return redirect(
+        f"{reverse('snapshots:list')}?resource={resource.pk}"
+    )
+
+
+@require_GET
+def resource_settings(request):
+    jobs = CaptureJob.objects.with_related()[:8]
     return render(
         request,
-        "resources/snapshot_list.html",
+        "resources/settings.html",
         {
-            "resource": resource,
-            "snapshots": resource.snapshots.all(),
+            "tag_count": Tag.objects.count(),
+            "job_count": CaptureJob.objects.count(),
+            "queued_job_count": CaptureJob.objects.filter(
+                status__in=[JobStatus.QUEUED, JobStatus.RETRY_WAIT]
+            ).count(),
+            "jobs": jobs,
         },
     )

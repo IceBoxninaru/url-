@@ -668,11 +668,12 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertContains(response, "Bulk Page B")
         self.assertContains(response, 'name="resource_ids"', html=False)
 
-    def test_bulk_edit_page_requires_selection(self):
+    def test_bulk_edit_page_allows_opening_without_selection(self):
         response = self.client.get(reverse("resources:bulk_edit"))
 
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers["Location"], reverse("resources:list"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "一括編集")
+        self.assertContains(response, "選択中のリソース")
 
     def test_list_fragment_returns_html_and_signature(self):
         resource = Resource.objects.create(
@@ -729,7 +730,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         content = response.content.decode("utf-8")
-        self.assertLess(content.find("最新スナップショット"), content.find("編集"))
+        self.assertLess(content.find("最新スナップショット"), content.find('id="resource-edit"'))
 
     def test_detail_shows_translation_when_available(self):
         resource = Resource.objects.create(

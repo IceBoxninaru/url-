@@ -9,31 +9,112 @@
     <script src="{% static 'app.js' %}" defer></script>
 </head>
 <body>
-    <header class="shell-header">
-        <div class="shell-header__brand">
-            <p class="eyebrow">URL Archive Manager</p>
-            <h1><a href="{% url 'resources:list' %}">URLアーカイブ管理アプリ</a></h1>
-        </div>
-        <nav class="shell-nav">
-            <div class="shell-nav__links">
-                <a href="{% url 'resources:list' %}">一覧</a>
-                <a href="{% url 'tags:list' %}">タグ</a>
-                <a href="{% url 'jobs:list' %}">ジョブ</a>
+    {% with namespace=request.resolver_match.namespace url_name=request.resolver_match.url_name %}
+    <div class="app-shell">
+        <aside class="app-sidebar">
+            <a href="{% url 'resources:list' %}" class="app-brand">
+                <span class="app-brand__mark" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                </span>
+                <div>
+                    <strong>URL Archive</strong>
+                </div>
+            </a>
+
+            <nav class="app-nav" aria-label="Main navigation">
+                <a
+                    href="{% url 'resources:list' %}"
+                    class="app-nav__link {% if namespace == 'resources' and url_name == 'list' or namespace == 'resources' and url_name == 'list_fragment' or namespace == 'resources' and url_name == 'detail' %}is-active{% endif %}"
+                >
+                    <span class="app-nav__icon" aria-hidden="true">≣</span>
+                    <span>一覧</span>
+                </a>
+                <a
+                    href="{% url 'resources:create' %}"
+                    class="app-nav__link {% if namespace == 'resources' and url_name == 'create' %}is-active{% endif %}"
+                >
+                    <span class="app-nav__icon" aria-hidden="true">⊕</span>
+                    <span>URL登録</span>
+                </a>
+                <a
+                    href="{% url 'resources:bulk_edit' %}"
+                    class="app-nav__link {% if namespace == 'resources' and url_name == 'bulk_edit' %}is-active{% endif %}"
+                >
+                    <span class="app-nav__icon" aria-hidden="true">⊞</span>
+                    <span>一括編集</span>
+                </a>
+                <a
+                    href="{% url 'snapshots:list' %}"
+                    class="app-nav__link {% if namespace == 'snapshots' %}is-active{% endif %}"
+                >
+                    <span class="app-nav__icon" aria-hidden="true">◫</span>
+                    <span>スナップショット</span>
+                </a>
+                <a
+                    href="{% url 'resources:settings' %}"
+                    class="app-nav__link {% if namespace == 'resources' and url_name == 'settings' or namespace == 'tags' or namespace == 'jobs' %}is-active{% endif %}"
+                >
+                    <span class="app-nav__icon" aria-hidden="true">⚙</span>
+                    <span>設定</span>
+                </a>
+            </nav>
+        </aside>
+
+        <div class="app-main">
+            <header class="app-topbar">
+                <form method="get" action="{% url 'resources:list' %}" class="top-search">
+                    <span class="top-search__icon" aria-hidden="true">⌕</span>
+                    <input
+                        type="text"
+                        name="q"
+                        value="{{ request.GET.q|default:'' }}"
+                        placeholder="URLやタイトル、ドメイン、タグで検索..."
+                        aria-label="URLやタイトル、ドメイン、タグで検索"
+                    >
+                    <span class="top-search__shortcut">⌘ K</span>
+                </form>
+
+                <div class="topbar-actions">
+                    <button type="button" class="icon-button" aria-label="notifications">
+                        <span aria-hidden="true">◌</span>
+                    </button>
+                    <div class="user-chip">
+                        <span class="user-chip__avatar" aria-hidden="true">
+                            {% if request.user.is_authenticated %}
+                                {{ request.user.get_username|slice:":1"|upper }}
+                            {% else %}
+                                U
+                            {% endif %}
+                        </span>
+                        <span class="user-chip__name">
+                            {% if request.user.is_authenticated %}
+                                {% if request.user.get_full_name %}
+                                    {{ request.user.get_full_name }}
+                                {% else %}
+                                    {{ request.user.get_username }}
+                                {% endif %}
+                            {% else %}
+                                Archive User
+                            {% endif %}
+                        </span>
+                    </div>
+                </div>
+            </header>
+
+            <div class="workspace">
+                {% if messages %}
+                    <section class="flash-stack">
+                        {% for message in messages %}
+                            <div class="flash flash-{{ message.tags|default:'info' }}">{{ message }}</div>
+                        {% endfor %}
+                    </section>
+                {% endif %}
+
+                {% block content %}{% endblock %}
             </div>
-            <a href="{% url 'resources:create' %}" class="primary-link shell-nav__cta">新規追加</a>
-        </nav>
-    </header>
-
-    {% if messages %}
-        <section class="flash-stack">
-            {% for message in messages %}
-                <div class="flash flash-{{ message.tags|default:'info' }}">{{ message }}</div>
-            {% endfor %}
-        </section>
-    {% endif %}
-
-    <main class="page-shell">
-        {% block content %}{% endblock %}
-    </main>
+        </div>
+    </div>
+    {% endwith %}
 </body>
 </html>

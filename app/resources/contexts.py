@@ -3,11 +3,14 @@ from __future__ import annotations
 import hashlib
 
 from django.urls import reverse
+from django.utils import timezone
 
 from resources.forms import ResourceFilterForm, ResourceForm
-from resources.models import Resource
+from resources.models import Resource, ReviewState
 from resources.services import build_snapshot_diff_context, get_capture_files
+from jobs.models import CaptureJob, JobStatus, JobType
 from snapshots.models import Snapshot
+from tags.models import Tag
 
 
 def get_similar_resources(snapshot: Snapshot | None):
@@ -56,6 +59,122 @@ def build_resource_detail_context(resource, form=None) -> dict:
     }
 
 
+def build_overview_metrics() -> list[dict]:
+    today = timezone.localdate()
+    recent_cutoff = today - timezone.timedelta(days=30)
+    metric_definitions = [
+        {
+            "label": "保存したURL総数",
+            "count": Resource.objects.count(),
+            "delta": Resource.objects.filter(created_at__date__gte=recent_cutoff).count(),
+            "delta_prefix": "+",
+            "tone": "blue",
+            "icon": "link",
+        },
+        {
+            "label": "要確認",
+            "count": Resource.objects.filter(review_state=ReviewState.NEEDS_REVIEW).count(),
+            "delta": Resource.objects.filter(
+                review_state=ReviewState.NEEDS_REVIEW,
+                updated_at__date__gte=recent_cutoff,
+            ).count(),
+            "delta_prefix": "+",
+            "tone": "amber",
+            "icon": "alert",
+        },
+        {
+            "label": "再確認待ち",
+            "count": Resource.objects.filter(recheck_at__isnull=False, recheck_at__lte=today).count(),
+            "delta": Resource.objects.filter(
+                recheck_at__isnull=False,
+                recheck_at__gte=recent_cutoff,
+            ).count(),
+            "delta_prefix": "+",
+            "tone": "violet",
+            "icon": "clock",
+        },
+        {
+            "label": "お気に入り",
+            "count": Resource.objects.filter(favorite=True).count(),
+            "delta": Resource.objects.filter(
+                favorite=True,
+                updated_at__date__gte=recent_cutoff,
+            ).count(),
+            "delta_prefix": "+",
+            "tone": "gold",
+            "icon": "star",
+        },
+    ]
+    return metric_definitions
+
+
+def describe_job_activity(job: CaptureJob) -> dict:
+    if job.job_type == JobType.CAPTURE:
+        if job.status == JobStatus.SUCCEEDED:
+            return {
+                "tone": "success",
+                "icon": "check",
+                "title": "ページを取得しました",
+            }
+        if job.status == JobStatus.RETRY_WAIT:
+            return {
+                "tone": "warning",
+                "icon": "clock",
+                "title": "再確認タスクを追加しました",
+            }
+        if job.status == JobStatus.FAILED:
+            return {
+                "tone": "danger",
+                "icon": "alert",
+                "title": "取得に失敗しました",
+            }
+        return {
+            "tone": "info",
+            "icon": "link",
+            "title": "新しいURLを登録しました",
+        }
+
+    if job.status == JobStatus.SUCCEEDED:
+        return {
+            "tone": "info",
+            "icon": "spark",
+            "title": "AI要約を更新しました",
+        }
+    return {
+        "tone": "info",
+        "icon": "spark",
+        "title": "AI補完を処理しました",
+    }
+
+
+def build_recent_activity(limit: int = 5) -> list[dict]:
+    activity_items: list[dict] = []
+    for job in CaptureJob.objects.with_related().filter(resource__search_only=False)[:limit]:
+        descriptor = describe_job_activity(job)
+        activity_items.append(
+            {
+                **descriptor,
+                "resource": job.resource,
+                "timestamp": job.updated_at,
+            }
+        )
+
+    if activity_items:
+        return activity_items
+
+    for resource in Resource.objects.with_related().filter(search_only=False)[:limit]:
+        activity_items.append(
+            {
+                "tone": "info",
+                "icon": "link",
+                "title": "URLを登録しました",
+                "resource": resource,
+                "timestamp": resource.updated_at,
+            }
+        )
+    return activity_items
+
+
 def build_resource_list_signature(resources) -> str:
     basis = "|".join(
         (
@@ -102,4 +221,7 @@ def build_resource_list_context(request) -> dict:
         "resource_signature": build_resource_list_signature(resource_list),
         "resource_fragment_url": reverse("resources:list_fragment"),
         "resource_poll_ms": 10000,
+        "overview_metrics": build_overview_metrics(),
+        "recent_activity": build_recent_activity(),
+        "tag_count": Tag.objects.count(),
     }

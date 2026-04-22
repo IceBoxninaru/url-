@@ -9,6 +9,7 @@ urlpatterns = [
     path("resources/live/", views.resource_list_fragment, name="list_fragment"),
     path("resources/bulk/", views.resource_bulk_edit, name="bulk_edit"),
     path("resources/new/", views.resource_create, name="create"),
+    path("settings/", views.resource_settings, name="settings"),
     path("resources/<int:pk>/", views.resource_detail, name="detail"),
     path("resources/<int:pk>/capture/", views.resource_capture, name="capture"),
     path("resources/<int:pk>/snapshots/", views.resource_snapshots, name="snapshots"),

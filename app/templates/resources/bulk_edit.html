@@ -1,98 +1,178 @@
 {% extends "base.html" %}
 
-{% block title %}まとめて編集 | URL Archive{% endblock %}
+{% block title %}一括編集 | URL Archive{% endblock %}
 
 {% block content %}
-<section class="panel create-panel">
-    <div class="panel-header">
+<div class="workspace-stack">
+    <section class="page-header">
         <div>
-            <p class="eyebrow">Bulk Edit</p>
-            <h2>まとめて編集</h2>
+            <h1>一括編集</h1>
+            <p class="page-subtitle">複数の保存済みURLをまとめて編集します。選択したすべてのURLに同じ内容が適用されます。</p>
         </div>
-        <div class="panel-header__actions">
-            <span>{{ selected_count }} 件選択中</span>
-            <a href="{{ next_url }}" class="text-link">一覧に戻る</a>
+        <div class="page-actions">
+            <a href="{{ next_url }}" class="button button--ghost">一覧に戻る</a>
         </div>
-    </div>
-    <p class="muted">選択したURLに同じ内容をまとめて適用します。対象の選び直しは一覧画面から行えます。</p>
-</section>
+    </section>
 
-<section class="panel create-panel">
-    <form method="post" action="{% url 'resources:bulk_edit' %}" class="bulk-edit-form bulk-edit-form--page">
+    {% if form.non_field_errors %}
+        <section class="panel">
+            <div class="form-errors">
+                {{ form.non_field_errors }}
+            </div>
+        </section>
+    {% endif %}
+
+    <form method="post" action="{% url 'resources:bulk_edit' %}" class="workspace-stack" data-bulk-selection-root>
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ next_url }}">
-        {% for resource_id in resource_ids %}
-            <input type="hidden" name="resource_ids" value="{{ resource_id }}">
-        {% endfor %}
 
-        <div class="bulk-edit-form__grid">
-            <label>
-                <span class="filter-label">見直し状態</span>
-                {{ form.review_state }}
-            </label>
-            <label>
-                <span class="filter-label">保存理由</span>
-                {{ form.save_reason }}
-            </label>
-            <label>
-                <span class="filter-label">次の行動</span>
-                {{ form.next_action }}
-            </label>
-            <label>
-                <span class="filter-label">再確認日</span>
-                {{ form.recheck_at }}
-            </label>
-            <label>
-                <span class="filter-label">お気に入り</span>
-                {{ form.favorite_state }}
-            </label>
-            <label>
-                <span class="filter-label">一覧表示</span>
-                {{ form.visibility_state }}
-            </label>
-            <label class="bulk-edit-form__full">
-                <span class="filter-label">追加タグ</span>
-                {{ form.tags }}
-            </label>
-            <label class="bulk-edit-form__full">
-                <span class="filter-label">新しいタグを追加</span>
-                {{ form.new_tags }}
-            </label>
-        </div>
-        <label class="checkbox-chip checkbox-chip--inline">
-            {{ form.clear_recheck_at }}
-            <span>再確認日をクリア</span>
-        </label>
-        <div class="action-row action-row--start">
-            <button type="submit">選択したURLに適用</button>
-            <a href="{{ next_url }}" class="text-link">キャンセル</a>
-        </div>
-    </form>
-</section>
-
-<section class="panel">
-    <div class="panel-header">
-        <h2>対象URL</h2>
-        <span>{{ selected_count }} 件</span>
-    </div>
-    <div class="bulk-selection-list">
-        {% for resource in selected_resources %}
-            <article class="bulk-selection-item">
+        <section class="panel">
+            <div class="section-heading">
                 <div>
-                    <h3><a href="{{ resource.get_absolute_url }}">{{ resource.display_title }}</a></h3>
-                    <p class="muted">{{ resource.original_url }}</p>
+                    <h2>選択中のリソース</h2>
+                    <p class="section-subtitle"><span data-bulk-selected-count>{{ selected_count }}</span> 件を選択中です。</p>
                 </div>
-                <div class="resource-card__chip-row">
-                    <span class="status-chip status-{{ resource.current_status }}">{{ resource.get_current_status_display }}</span>
-                    {% if resource.review_state != "none" %}
-                        <span class="review-chip review-{{ resource.review_state }}">{{ resource.get_review_state_display }}</span>
-                    {% endif %}
-                    {% if resource.favorite %}
-                        <span class="review-chip review-favorite">お気に入り</span>
-                    {% endif %}
+                <label class="toggle-inline">
+                    <input type="checkbox" data-bulk-select-all>
+                    <span>すべて選択</span>
+                </label>
+            </div>
+
+            {% if resource_choices %}
+                <div class="table-scroll">
+                    <table class="resource-table resource-table--selection">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th>タイトル</th>
+                                <th>ドメイン</th>
+                                <th>見直し状態</th>
+                                <th>保存理由</th>
+                                <th>タグ数</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for resource in resource_choices %}
+                                <tr>
+                                    <td>
+                                        <input
+                                            type="checkbox"
+                                            name="resource_ids"
+                                            value="{{ resource.id }}"
+                                            {% if resource.id in selected_resource_ids %}checked{% endif %}
+                                            data-bulk-select-item
+                                            aria-label="{{ resource.display_title }} を選択"
+                                        >
+                                    </td>
+                                    <td>
+                                        <a href="{{ resource.get_absolute_url }}" class="resource-table__title">{{ resource.display_title }}</a>
+                                        <p class="resource-table__url">{{ resource.original_url }}</p>
+                                    </td>
+                                    <td>{{ resource.domain }}</td>
+                                    <td>
+                                        {% if resource.review_state != "none" %}
+                                            <span class="status-chip status-chip--review-{{ resource.review_state }}">{{ resource.get_review_state_display }}</span>
+                                        {% else %}
+                                            <span class="muted">未設定</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if resource.save_reason %}
+                                            {{ resource.get_save_reason_display }}
+                                        {% else %}
+                                            <span class="muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ resource.tags.count }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
-            </article>
-        {% endfor %}
-    </div>
-</section>
+            {% else %}
+                <div class="empty-state">
+                    <h3>一括編集できるURLがまだありません</h3>
+                    <p>先にURLを登録すると、この画面から複数件まとめて更新できます。</p>
+                </div>
+            {% endif %}
+        </section>
+
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <h2>一括編集を適用する</h2>
+                    <p class="section-subtitle">空欄の項目は変更しません。</p>
+                </div>
+            </div>
+
+            <div class="form-grid">
+                <label class="field-group">
+                    <span class="field-label">{{ form.review_state.label }}</span>
+                    {{ form.review_state }}
+                    {{ form.review_state.errors }}
+                </label>
+                <label class="field-group">
+                    <span class="field-label">{{ form.save_reason.label }}</span>
+                    {{ form.save_reason }}
+                    {{ form.save_reason.errors }}
+                </label>
+                <label class="field-group">
+                    <span class="field-label">{{ form.next_action.label }}</span>
+                    {{ form.next_action }}
+                    {{ form.next_action.errors }}
+                </label>
+                <label class="field-group">
+                    <span class="field-label">{{ form.recheck_at.label }}</span>
+                    {{ form.recheck_at }}
+                    {{ form.recheck_at.errors }}
+                </label>
+                <label class="field-group">
+                    <span class="field-label">{{ form.favorite_state.label }}</span>
+                    {{ form.favorite_state }}
+                    {{ form.favorite_state.errors }}
+                </label>
+                <label class="field-group">
+                    <span class="field-label">{{ form.visibility_state.label }}</span>
+                    {{ form.visibility_state }}
+                    {{ form.visibility_state.errors }}
+                </label>
+                <label class="field-group field-group--full">
+                    <span class="field-label">{{ form.tags.label }}</span>
+                    {{ form.tags }}
+                    {% if form.tags.help_text %}
+                        <span class="field-help">{{ form.tags.help_text }}</span>
+                    {% endif %}
+                    {{ form.tags.errors }}
+                </label>
+                <label class="field-group field-group--full">
+                    <span class="field-label">{{ form.new_tags.label }}</span>
+                    {{ form.new_tags }}
+                    {% if form.new_tags.help_text %}
+                        <span class="field-help">{{ form.new_tags.help_text }}</span>
+                    {% endif %}
+                    {{ form.new_tags.errors }}
+                </label>
+            </div>
+
+            <div class="filter-inline-row">
+                <label class="toggle-inline">
+                    {{ form.clear_recheck_at }}
+                    <span>再確認日をクリア</span>
+                </label>
+            </div>
+
+            <div class="warning-banner">
+                注意: この変更は現在選択しているすべてのURLに適用されます。元に戻すことはできません。
+            </div>
+
+            <div class="form-actions form-actions--split">
+                <div class="form-actions__primary">
+                    <button type="submit" class="button button--primary">選択したURLに適用</button>
+                    <a href="{% url 'resources:bulk_edit' %}" class="button button--ghost">リセット</a>
+                </div>
+                <a href="{{ next_url }}" class="button button--text">キャンセル</a>
+            </div>
+        </section>
+    </form>
+</div>
 {% endblock %}

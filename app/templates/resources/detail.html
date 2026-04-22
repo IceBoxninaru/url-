@@ -3,226 +3,326 @@
 {% block title %}{{ resource.display_title }} | URL Archive{% endblock %}
 
 {% block content %}
-<section class="panel">
-    <div class="panel-header">
+<div class="workspace-stack">
+    <nav class="breadcrumbs" aria-label="breadcrumb">
+        <a href="{% url 'resources:list' %}">一覧</a>
+        <span>/</span>
+        <span>URL詳細</span>
+    </nav>
+
+    <section class="page-header page-header--detail">
         <div>
-            <p class="eyebrow">{{ resource.domain }}</p>
-            <h2>{{ resource.display_title }}</h2>
+            <h1>{{ resource.display_title }}</h1>
+            <p class="page-subtitle">
+                <a href="{{ resource.original_url }}" target="_blank" rel="noreferrer">{{ resource.domain }}</a>
+            </p>
+            <div class="status-row">
+                <span class="status-chip status-chip--resource-{{ resource.current_status }}">{{ resource.get_current_status_display }}</span>
+                {% if resource.link_status != "unchecked" %}
+                    <span class="status-chip status-chip--link-{{ resource.link_status }}">{{ resource.get_link_status_display }}</span>
+                {% endif %}
+                {% if resource.review_state != "none" %}
+                    <span class="status-chip status-chip--review-{{ resource.review_state }}">{{ resource.get_review_state_display }}</span>
+                {% endif %}
+                {% if resource.favorite %}
+                    <span class="tone-chip tone-chip--gold">お気に入り</span>
+                {% endif %}
+                {% if resource.search_only %}
+                    <span class="tone-chip tone-chip--neutral">検索時のみ表示</span>
+                {% endif %}
+            </div>
         </div>
-        <div class="action-row">
+
+        <div class="page-actions">
             <form method="post" action="{% url 'resources:capture' resource.id %}">
                 {% csrf_token %}
-                <button type="submit">再取得</button>
+                <button type="submit" class="button button--ghost">再取得</button>
             </form>
             <form method="post" action="{% url 'resources:detail' resource.id %}">
                 {% csrf_token %}
                 <input type="hidden" name="_method" value="LINK_CHECK">
-                <button type="submit">リンク確認</button>
+                <button type="submit" class="button button--ghost">リンク確認</button>
             </form>
+            <a href="#resource-edit" class="button button--ghost">更新</a>
             <form method="post" action="{% url 'resources:detail' resource.id %}" onsubmit="return confirm('本当に削除しますか?');">
                 {% csrf_token %}
                 <input type="hidden" name="_method" value="DELETE">
-                <button type="submit" class="danger">削除</button>
+                <button type="submit" class="button button--danger">削除</button>
             </form>
         </div>
-    </div>
+    </section>
 
-    <dl class="meta-list">
-        <dt>元URL</dt>
-        <dd><a href="{{ resource.original_url }}" target="_blank" rel="noreferrer">{{ resource.original_url }}</a></dd>
-        <dt>正規化URL</dt>
-        <dd>{{ resource.normalized_url }}</dd>
-        <dt>取得状態</dt>
-        <dd>{{ resource.get_current_status_display }}</dd>
-        <dt>リンク状態</dt>
-        <dd>{{ resource.get_link_status_display }}</dd>
-        <dt>リンク確認</dt>
-        <dd>
-            {% if resource.last_link_check_at %}
-                {{ resource.last_link_check_at|date:"Y-m-d H:i" }}
-                {% if resource.last_link_check_http_status %}
-                    / HTTP {{ resource.last_link_check_http_status }}
-                {% endif %}
-            {% else %}
-                未確認
-            {% endif %}
-        </dd>
-        <dt>見直し状態</dt>
-        <dd>{{ resource.get_review_state_display }}</dd>
-        <dt>保存理由</dt>
-        <dd>{% if resource.save_reason %}{{ resource.get_save_reason_display }}{% else %}-{% endif %}</dd>
-        <dt>次の行動</dt>
-        <dd>{{ resource.next_action|default:"-" }}</dd>
-        <dt>再確認日</dt>
-        <dd>
-            {% if resource.recheck_at %}
-                {{ resource.recheck_at|date:"Y-m-d" }}
-                {% if resource.is_recheck_due %} / 再確認待ち{% endif %}
-            {% else %}
-                -
-            {% endif %}
-        </dd>
-        <dt>お気に入り</dt>
-        <dd>{% if resource.favorite %}はい{% else %}いいえ{% endif %}</dd>
-        <dt>一覧表示</dt>
-        <dd>{{ resource.visibility_label }}</dd>
-        <dt>画像取得</dt>
-        <dd>{% if resource.capture_images %}有効{% else %}無効{% endif %}</dd>
-        <dt>動画取得</dt>
-        <dd>{% if resource.capture_videos %}有効{% else %}無効{% endif %}</dd>
-    </dl>
-    <div class="tag-row">
-        {% for tag in resource.tags.all %}
-            <span class="tag-pill" style="--tag-color: {{ tag.color }}">{{ tag.name }}</span>
-        {% empty %}
-            <span class="muted">タグなし</span>
-        {% endfor %}
-    </div>
-    {% if resource.note %}
-        <div class="summary">
-            <strong>メモ</strong>
-            <p>{{ resource.note|linebreaksbr }}</p>
+    <section class="panel">
+        <div class="meta-summary">
+            <div class="meta-item">
+                <span class="meta-item__label">元URL</span>
+                <div class="meta-item__value"><a href="{{ resource.original_url }}" target="_blank" rel="noreferrer">{{ resource.original_url }}</a></div>
+            </div>
+            <div class="meta-item">
+                <span class="meta-item__label">再確認日</span>
+                <div class="meta-item__value">
+                    {% if resource.recheck_at %}
+                        {{ resource.recheck_at|date:"Y/m/d" }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </div>
+            </div>
+            <div class="meta-item">
+                <span class="meta-item__label">保存理由</span>
+                <div class="meta-item__value">{% if resource.save_reason %}{{ resource.get_save_reason_display }}{% else %}-{% endif %}</div>
+            </div>
+            <div class="meta-item">
+                <span class="meta-item__label">最終更新日</span>
+                <div class="meta-item__value">{{ resource.updated_at|date:"Y/m/d H:i" }}</div>
+            </div>
+            <div class="meta-item">
+                <span class="meta-item__label">リンク確認</span>
+                <div class="meta-item__value">
+                    {% if resource.last_link_check_at %}
+                        {{ resource.last_link_check_at|date:"Y/m/d H:i" }}
+                        {% if resource.last_link_check_http_status %}
+                            / HTTP {{ resource.last_link_check_http_status }}
+                        {% endif %}
+                    {% else %}
+                        未確認
+                    {% endif %}
+                </div>
+            </div>
+            <div class="meta-item">
+                <span class="meta-item__label">次の行動</span>
+                <div class="meta-item__value">{{ resource.next_action|default:"-" }}</div>
+            </div>
+            <div class="meta-item">
+                <span class="meta-item__label">タグ</span>
+                <div class="meta-item__value">
+                    <div class="tag-chip-list">
+                        {% for tag in resource.tags.all %}
+                            <span class="tag-chip" style="--tag-color: {{ tag.color }}">{{ tag.name }}</span>
+                        {% empty %}
+                            <span class="muted">タグなし</span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <div class="meta-item meta-item--full">
+                <span class="meta-item__label">メモ</span>
+                <div class="meta-item__value">{{ resource.note|default:"-"|linebreaksbr }}</div>
+            </div>
         </div>
-    {% endif %}
-    {% if resource.last_link_check_error %}
-        <p class="muted">リンク確認メモ: {{ resource.last_link_check_error }}</p>
-    {% endif %}
-</section>
+    </section>
 
-{% if resource.latest_snapshot %}
-<section class="panel">
-    <div class="panel-header">
-        <h2>最新スナップショット</h2>
-        <a href="{% url 'resources:snapshots' resource.id %}" class="text-link">履歴を見る</a>
-    </div>
-    {% if resource.link_status == "gone" or resource.link_status == "maybe_deleted" %}
-        <p class="summary">
-            現在のリンク状態は {{ resource.get_link_status_display }} ですが、保存済みスナップショットはこのまま閲覧できます。
-        </p>
-    {% endif %}
-    {% if latest_snapshot_diff.previous_snapshot %}
-        <div class="summary">
-            <strong>前回との差分</strong>
-            <p>
-                比較対象:
-                <a href="{{ latest_snapshot_diff.previous_snapshot.get_absolute_url }}">Snapshot #{{ latest_snapshot_diff.previous_snapshot.snapshot_no }}</a>
-            </p>
-            {% if latest_snapshot_diff.items %}
-                <ul class="inline-list inline-list--stack">
-                    {% for item in latest_snapshot_diff.items %}
-                        <li><strong>{{ item.label }}:</strong> {{ item.before }} → {{ item.after }}</li>
+    <div class="detail-layout">
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <h2>最新スナップショット{% if resource.latest_snapshot %}（{{ resource.latest_snapshot.fetched_at|date:"Y/m/d H:i" }}）{% endif %}</h2>
+                    <p class="section-subtitle">保存済みの要約・本文・画像・動画を確認できます。</p>
+                </div>
+                <a href="{% url 'resources:snapshots' resource.id %}" class="button button--soft">履歴を見る</a>
+            </div>
+
+            {% if resource.latest_snapshot %}
+                <div class="tab-group" data-tab-group>
+                    <div class="tab-nav" role="tablist" aria-label="Latest snapshot tabs">
+                        <button type="button" class="tab-button is-active" data-tab-target="summary">要約</button>
+                        <button type="button" class="tab-button" data-tab-target="body">本文</button>
+                        <button type="button" class="tab-button" data-tab-target="images">画像</button>
+                        <button type="button" class="tab-button" data-tab-target="videos">動画</button>
+                    </div>
+
+                    <div class="tab-panel is-active" data-tab-panel="summary">
+                        <div class="snapshot-focus">
+                            {% if resource.latest_snapshot.screenshot_full_path %}
+                                <a href="/{{ resource.latest_snapshot.screenshot_full_path }}" target="_blank" rel="noreferrer" class="snapshot-preview-card">
+                                    <img src="/{{ resource.latest_snapshot.screenshot_full_path }}" alt="Latest screenshot" class="screenshot-preview">
+                                </a>
+                            {% endif %}
+                            <div class="summary-stack">
+                                <div class="summary-block">
+                                    <h3>最新のAI要約</h3>
+                                    <p>{{ resource.latest_snapshot.ai_summary|default:"要約はまだありません。" }}</p>
+                                </div>
+                                {% if resource.latest_snapshot.ai_translation %}
+                                    <div class="summary-block">
+                                        <h3>日本語訳</h3>
+                                        <p>{{ resource.latest_snapshot.ai_translation }}</p>
+                                    </div>
+                                {% endif %}
+                                <div class="summary-block">
+                                    <h3>ページ情報</h3>
+                                    <ul class="bullet-list">
+                                        <li>ページタイトル: {{ resource.latest_snapshot.page_title|default:"-" }}</li>
+                                        <li>HTTPステータス: {{ resource.latest_snapshot.http_status|default:"-" }}</li>
+                                        <li>取得方法: {{ resource.latest_snapshot.get_fetch_method_display }}</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-panel" data-tab-panel="body">
+                        <pre class="excerpt">{{ resource.latest_snapshot.extracted_text|default:"本文はまだありません。" }}</pre>
+                    </div>
+
+                    <div class="tab-panel" data-tab-panel="images">
+                        {% if has_image_files %}
+                            <h3>保存した画像</h3>
+                            <div class="media-grid">
+                                {% for image in image_files %}
+                                    <a href="/{{ image.path }}" target="_blank" rel="noreferrer" class="image-card">
+                                        <img src="/{{ image.path }}" alt="Captured image {{ forloop.counter }}">
+                                    </a>
+                                {% endfor %}
+                            </div>
+                        {% elif capture_mismatch %}
+                            <p class="empty-copy">保存済みファイルが見つかりません。再取得してください。</p>
+                        {% else %}
+                            <p class="empty-copy">保存済みの画像はありません。</p>
+                        {% endif %}
+                    </div>
+
+                    <div class="tab-panel" data-tab-panel="videos">
+                        {% if has_video_files %}
+                            <h3>保存動画</h3>
+                            <div class="media-grid media-grid--video">
+                                {% for video in video_files %}
+                                    <a href="/{{ video.path }}" target="_blank" rel="noreferrer" class="video-card">
+                                        <video src="/{{ video.path }}" controls preload="metadata"></video>
+                                    </a>
+                                {% endfor %}
+                            </div>
+                        {% elif capture_mismatch %}
+                            <p class="empty-copy">保存済みファイルが見つかりません。再取得してください。</p>
+                        {% else %}
+                            <p class="empty-copy">保存済みの動画はありません。</p>
+                        {% endif %}
+                    </div>
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <h3>スナップショットはまだありません</h3>
+                    <p>「再取得」から取得ジョブを作成できます。</p>
+                </div>
+            {% endif %}
+        </section>
+
+        <aside class="side-stack">
+            <section class="panel info-card">
+                <h2>AI提案タグ</h2>
+                <div class="tag-chip-list">
+                    {% for tag in latest_snapshot_context.tag_candidates %}
+                        <span class="tag-chip tag-chip--soft">{{ tag }}</span>
+                    {% empty %}
+                        <span class="muted">候補はまだありません。</span>
                     {% endfor %}
-                </ul>
-            {% else %}
-                <p class="muted">前回の取得から大きな変更はありません。</p>
-            {% endif %}
-        </div>
-    {% endif %}
-    <div class="detail-grid">
-        <div>
-            <p><strong>ページタイトル:</strong> {{ resource.latest_snapshot.page_title|default:"-" }}</p>
-            {% if resource.latest_snapshot.ai_translation %}
-                <p><strong>日本語訳:</strong> {{ resource.latest_snapshot.ai_translation }}</p>
-            {% endif %}
-            <p><strong>カテゴリ:</strong> {{ resource.latest_snapshot.ai_category|default:"-" }}</p>
-            <p><strong>HTTP:</strong> {{ resource.latest_snapshot.http_status|default:"-" }}</p>
-            <p><strong>取得方法:</strong> {{ resource.latest_snapshot.get_fetch_method_display }}</p>
-            <p><strong>保存画像:</strong> {{ resource.latest_snapshot.image_count }} 件</p>
-            <p><strong>保存動画:</strong> {{ resource.latest_snapshot.video_count }} 件</p>
-            <p><strong>本文</strong></p>
-            <pre class="excerpt">{{ resource.latest_snapshot.extracted_text|truncatechars:1200 }}</pre>
-            {% if latest_snapshot_context.tag_candidates %}
-                <p><strong>タグ候補:</strong> {{ latest_snapshot_context.tag_candidates|join:", " }}</p>
-            {% endif %}
-            {% if latest_snapshot_context.similar_resources %}
-                <p><strong>類似候補:</strong></p>
-                <ul class="inline-list">
+                </div>
+            </section>
+
+            <section class="panel info-card">
+                <h2>類似リソース</h2>
+                <div class="stack-list">
                     {% for similar in latest_snapshot_context.similar_resources %}
-                        <li><a href="{{ similar.get_absolute_url }}">{{ similar.display_title }}</a></li>
+                        <a href="{{ similar.get_absolute_url }}" class="list-link">{{ similar.display_title }}</a>
+                    {% empty %}
+                        <span class="muted">類似候補はまだありません。</span>
                     {% endfor %}
+                </div>
+            </section>
+
+            <section class="panel info-card">
+                <h2>取得結果</h2>
+                <ul class="bullet-list">
+                    <li>スクリーンショット: {% if resource.latest_snapshot and resource.latest_snapshot.screenshot_full_path %}1 件{% else %}0 件{% endif %}</li>
+                    <li>画像: {% if resource.latest_snapshot %}{{ resource.latest_snapshot.image_count }} 件{% else %}0 件{% endif %}</li>
+                    <li>動画: {% if resource.latest_snapshot %}{{ resource.latest_snapshot.video_count }} 件{% else %}0 件{% endif %}</li>
                 </ul>
-            {% endif %}
-        </div>
-
-        <div class="snapshot-assets">
-            {% if resource.latest_snapshot.screenshot_full_path %}
-                <a href="/{{ resource.latest_snapshot.screenshot_full_path }}" target="_blank" rel="noreferrer" class="snapshot-preview-card">
-                    <p><strong>ページ全体スクリーンショット</strong></p>
-                    <img src="/{{ resource.latest_snapshot.screenshot_full_path }}" alt="Latest screenshot" class="screenshot-preview screenshot-preview--compact">
-                    <span class="image-card__meta">クリックで拡大表示</span>
-                </a>
-            {% endif %}
-
-            {% if has_image_files %}
-                <div>
-                    <p><strong>保存した画像</strong></p>
-                    <div class="image-gallery image-gallery--compact">
-                        {% for image in image_files %}
-                            <a href="/{{ image.path }}" target="_blank" rel="noreferrer" class="image-card">
-                                <img src="/{{ image.path }}" alt="Captured image {{ forloop.counter }}">
-                            </a>
-                        {% endfor %}
-                    </div>
-                </div>
-            {% endif %}
-
-            {% if has_video_files %}
-                <div>
-                    <p><strong>保存した動画</strong></p>
-                    <div class="video-gallery video-gallery--compact">
-                        {% for video in video_files %}
-                            <a href="/{{ video.path }}" target="_blank" rel="noreferrer" class="video-card">
-                                <video src="/{{ video.path }}" controls preload="metadata"></video>
-                            </a>
-                        {% endfor %}
-                    </div>
-                </div>
-            {% endif %}
-
-            {% if capture_mismatch %}
-                <p class="muted">保存済みファイルが見つかりません。再取得してください。</p>
-            {% elif not resource.latest_snapshot.screenshot_full_path and not has_image_files and not has_video_files %}
-                <p class="muted">保存済みの画像・動画はありません。</p>
-            {% endif %}
-        </div>
-    </div>
-</section>
-{% endif %}
-
-<section class="panel">
-    <div class="panel-header">
-        <h2>編集</h2>
-    </div>
-    <form method="post" action="{% url 'resources:detail' resource.id %}" class="form-stack">
-        {% csrf_token %}
-        <input type="hidden" name="_method" value="PATCH">
-        {{ form.as_p }}
-        <button type="submit">更新</button>
-    </form>
-</section>
-
-<section class="panel">
-    <div class="panel-header">
-        <h2>取得履歴</h2>
-        <a href="{% url 'resources:snapshots' resource.id %}" class="text-link">すべて表示</a>
-    </div>
-    <div class="history-list">
-        {% for snapshot in snapshots %}
-            <article class="history-item {% if snapshot.screenshot_full_path %}history-item--with-preview{% endif %}">
-                {% if snapshot.screenshot_full_path %}
-                    <a href="{{ snapshot.get_absolute_url }}" class="history-item__preview">
-                        <img src="/{{ snapshot.screenshot_full_path }}" alt="Snapshot #{{ snapshot.snapshot_no }} preview" class="screenshot-preview screenshot-preview--thumb">
-                    </a>
+                {% if capture_mismatch %}
+                    <p class="text-warning">取得件数と保存済みファイルが一致しません。</p>
                 {% endif %}
-                <div>
-                    <h3><a href="{{ snapshot.get_absolute_url }}">Snapshot #{{ snapshot.snapshot_no }}</a></h3>
-                    <p>{{ snapshot.fetched_at|date:"Y-m-d H:i" }} / {{ snapshot.get_fetch_method_display }} / HTTP {{ snapshot.http_status|default:"-" }} / 画像 {{ snapshot.image_count }} 件 / 動画 {{ snapshot.video_count }} 件</p>
-                </div>
-                <p>{{ snapshot.page_title|default:snapshot.error_message|truncatechars:120 }}</p>
-            </article>
-        {% empty %}
-            <p class="muted">履歴はまだありません。</p>
-        {% endfor %}
+            </section>
+        </aside>
     </div>
-</section>
+
+    <div class="detail-layout">
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <h2>前回との差分</h2>
+                    <p class="section-subtitle">最新スナップショットと前回取得結果の差分です。</p>
+                </div>
+            </div>
+            {% if latest_snapshot_diff.previous_snapshot %}
+                <p class="muted">比較対象: <a href="{{ latest_snapshot_diff.previous_snapshot.get_absolute_url }}">Snapshot #{{ latest_snapshot_diff.previous_snapshot.snapshot_no }}</a></p>
+                {% if latest_snapshot_diff.items %}
+                    <ul class="diff-list">
+                        {% for item in latest_snapshot_diff.items %}
+                            <li>
+                                <strong>{{ item.label }}</strong>
+                                <span>{{ item.before }}</span>
+                                <span class="diff-arrow">→</span>
+                                <span>{{ item.after }}</span>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="empty-copy">前回の取得から大きな変更はありません。</p>
+                {% endif %}
+            {% else %}
+                <p class="empty-copy">比較対象のスナップショットはまだありません。</p>
+            {% endif %}
+        </section>
+
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <h2>スナップショット履歴</h2>
+                    <p class="section-subtitle">新しい取得から順に表示します。</p>
+                </div>
+                <a href="{% url 'resources:snapshots' resource.id %}" class="button button--soft">すべて見る</a>
+            </div>
+            <div class="history-list">
+                {% for snapshot in snapshots %}
+                    <a href="{{ snapshot.get_absolute_url }}" class="history-row">
+                        <div>
+                            <strong>Snapshot #{{ snapshot.snapshot_no }}</strong>
+                            <p class="muted">{{ snapshot.fetched_at|date:"Y/m/d H:i" }}</p>
+                        </div>
+                        <div>
+                            <span class="status-chip status-chip--resource-{% if snapshot.error_message %}fetch_failed{% else %}active{% endif %}">
+                                {% if snapshot.error_message %}エラー{% else %}取得済み{% endif %}
+                            </span>
+                        </div>
+                    </a>
+                {% empty %}
+                    <p class="muted">履歴はまだありません。</p>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+
+    <section class="panel" id="resource-edit">
+        <div class="section-heading">
+            <div>
+                <h2>編集</h2>
+                <p class="section-subtitle">URL情報をその場で更新できます。</p>
+            </div>
+        </div>
+
+        {% if form.non_field_errors %}
+            <div class="form-errors">
+                {{ form.non_field_errors }}
+            </div>
+        {% endif %}
+
+        <form method="post" action="{% url 'resources:detail' resource.id %}" class="form-stack">
+            {% csrf_token %}
+            <input type="hidden" name="_method" value="PATCH">
+            {{ form.as_p }}
+            <div class="form-actions">
+                <button type="submit" class="button button--primary">更新する</button>
+            </div>
+        </form>
+    </section>
+</div>
 {% endblock %}

@@ -19,31 +19,6 @@ function initResourceAutoRefresh() {
     }
   };
 
-  const syncBulkSelection = () => {
-    const currentPanel = getPanel();
-    const checkboxes = Array.from(currentPanel?.querySelectorAll("[data-resource-select-checkbox]") || []);
-    const checkedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
-    const countNode = currentPanel?.querySelector("[data-resource-selected-count]");
-    const selectAllNode = currentPanel?.querySelector("[data-resource-select-all]");
-    const bulkOpenButton = currentPanel?.querySelector("[data-resource-bulk-open-button]");
-
-    if (countNode) {
-      countNode.textContent = `${checkedCount} 件選択中`;
-    }
-    if (selectAllNode) {
-      selectAllNode.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
-      selectAllNode.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
-    }
-    if (bulkOpenButton instanceof HTMLButtonElement) {
-      bulkOpenButton.disabled = checkedCount === 0;
-    }
-  };
-
-  const hasBulkSelection = () => {
-    const currentPanel = getPanel();
-    return Boolean(currentPanel?.querySelector("[data-resource-select-checkbox]:checked"));
-  };
-
   const buildFragmentUrl = () => {
     const currentPanel = getPanel();
     const baseUrl = currentPanel?.dataset.resourceFragmentUrl;
@@ -66,16 +41,11 @@ function initResourceAutoRefresh() {
     if (document.hidden && !force) {
       return;
     }
-    if (hasBulkSelection()) {
-      setStatus("選択中");
-      return;
-    }
 
     const url = buildFragmentUrl();
     if (!url) {
       return;
     }
-
     if (force) {
       url.searchParams.set("_ts", String(Date.now()));
     }
@@ -85,12 +55,9 @@ function initResourceAutoRefresh() {
 
     try {
       const response = await fetch(url, {
-        headers: {
-          "X-Requested-With": "fetch",
-        },
+        headers: { "X-Requested-With": "fetch" },
         credentials: "same-origin",
       });
-
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -100,7 +67,6 @@ function initResourceAutoRefresh() {
         panel.outerHTML = payload.html;
         panel = getPanel();
         signature = panel?.dataset.resourceSignature || payload.signature;
-        syncBulkSelection();
         setStatus("更新済み");
         window.setTimeout(() => setStatus("自動更新中"), 1800);
       } else {
@@ -127,28 +93,69 @@ function initResourceAutoRefresh() {
       refreshList(true);
     }
   });
+}
 
-  document.addEventListener("change", (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLInputElement)) {
+function initTabs() {
+  document.querySelectorAll("[data-tab-group]").forEach((group) => {
+    const buttons = Array.from(group.querySelectorAll("[data-tab-target]"));
+    const panels = Array.from(group.querySelectorAll("[data-tab-panel]"));
+    if (buttons.length === 0 || panels.length === 0) {
       return;
     }
-    if (target.matches("[data-resource-select-all]")) {
-      const currentPanel = getPanel();
-      currentPanel?.querySelectorAll("[data-resource-select-checkbox]").forEach((checkbox) => {
-        checkbox.checked = target.checked;
+
+    const activate = (target) => {
+      buttons.forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.tabTarget === target);
       });
-      syncBulkSelection();
-      return;
-    }
-    if (target.matches("[data-resource-select-checkbox]")) {
-      syncBulkSelection();
-    }
-  });
+      panels.forEach((panel) => {
+        panel.classList.toggle("is-active", panel.dataset.tabPanel === target);
+      });
+    };
 
-  syncBulkSelection();
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => {
+        activate(button.dataset.tabTarget);
+      });
+    });
+  });
+}
+
+function initBulkSelection() {
+  document.querySelectorAll("[data-bulk-selection-root]").forEach((root) => {
+    const sync = () => {
+      const checkboxes = Array.from(root.querySelectorAll("[data-bulk-select-item]"));
+      const checkedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+      const countNode = root.querySelector("[data-bulk-selected-count]");
+      const selectAllNode = root.querySelector("[data-bulk-select-all]");
+
+      if (countNode) {
+        countNode.textContent = String(checkedCount);
+      }
+      if (selectAllNode instanceof HTMLInputElement) {
+        selectAllNode.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
+        selectAllNode.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+      }
+    };
+
+    root.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+      if (target.matches("[data-bulk-select-all]")) {
+        root.querySelectorAll("[data-bulk-select-item]").forEach((checkbox) => {
+          checkbox.checked = target.checked;
+        });
+      }
+      sync();
+    });
+
+    sync();
+  });
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   initResourceAutoRefresh();
+  initTabs();
+  initBulkSelection();
 });
