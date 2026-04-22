@@ -8,9 +8,10 @@ from django.urls import reverse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods
 
-from resources.forms import ResourceFilterForm, ResourceForm
+from resources.forms import ResourceBulkEditForm, ResourceFilterForm, ResourceForm
 from resources.models import Resource
 from resources.services import (
+    build_snapshot_diff_context,
     check_resource_link_status,
     delete_resource_with_artifacts,
     enqueue_capture_job,
@@ -41,6 +42,7 @@ def build_resource_detail_context(resource, form=None):
         "video_files": video_files,
         "has_image_files": bool(image_files),
         "has_video_files": bool(video_files),
+        "latest_snapshot_diff": build_snapshot_diff_context(resource.latest_snapshot),
         "capture_mismatch": (
             (resource.capture_images and not image_files)
             or (resource.capture_videos and not video_files)
@@ -56,6 +58,10 @@ def build_resource_list_signature(resources):
             f"{resource.current_status}:"
             f"{resource.link_status}:"
             f"{resource.review_state}:"
+            f"{resource.save_reason}:"
+            f"{resource.next_action}:"
+            f"{resource.recheck_at or ''}:"
+            f"{resource.is_recheck_due}:"
             f"{resource.latest_snapshot_id or 0}:"
             f"{resource.search_only}:"
             f"{resource.latest_translation}"
@@ -65,7 +71,7 @@ def build_resource_list_signature(resources):
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()
 
 
-def build_resource_list_context(request):
+def build_resource_list_context(request, bulk_form=None):
     filter_form = ResourceFilterForm(request.GET)
     resources = Resource.objects.all()
     if filter_form.is_valid():
@@ -76,6 +82,8 @@ def build_resource_list_context(request):
             favorite_only=filter_form.cleaned_data.get("favorite_only") or False,
             status=filter_form.cleaned_data.get("status") or "",
             review_state=filter_form.cleaned_data.get("review_state") or "",
+            save_reason=filter_form.cleaned_data.get("save_reason") or "",
+            recheck_due_only=filter_form.cleaned_data.get("recheck_due_only") or False,
         )
     else:
         resources = resources.with_related()
@@ -88,6 +96,7 @@ def build_resource_list_context(request):
         "resource_signature": build_resource_list_signature(resource_list),
         "resource_fragment_url": reverse("resources:list_fragment"),
         "resource_poll_ms": 10000,
+        "bulk_form": bulk_form or ResourceBulkEditForm(),
     }
 
 
@@ -127,6 +136,28 @@ def resource_create(request):
             messages.error(request, "URLの登録に失敗しました。入力内容を確認してください。")
 
     return render(request, "resources/create.html", {"form": form})
+
+
+@require_http_methods(["POST"])
+def resource_bulk_edit(request):
+    form = ResourceBulkEditForm(request.POST)
+    next_url = request.POST.get("next") or reverse("resources:list")
+    if not next_url.startswith("/"):
+        next_url = reverse("resources:list")
+
+    resource_ids = [int(raw_id) for raw_id in request.POST.getlist("resource_ids") if raw_id.isdigit()]
+    if not resource_ids:
+        messages.error(request, "一括操作するURLを1件以上選択してください。")
+        return redirect(next_url)
+
+    if not form.is_valid():
+        first_error = next((error for errors in form.errors.values() for error in errors), "一括更新に失敗しました。")
+        messages.error(request, first_error)
+        return redirect(next_url)
+
+    updated_count = form.apply_to_resources(Resource.objects.filter(pk__in=resource_ids))
+    messages.success(request, f"{updated_count} 件のURLに一括操作を適用しました。")
+    return redirect(next_url)
 
 
 @ensure_csrf_cookie

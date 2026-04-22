@@ -22,9 +22,17 @@
                 <span class="filter-label">見直し</span>
                 {{ filter_form.review_state }}
             </label>
+            <label class="filter-inline">
+                <span class="filter-label">保存理由</span>
+                {{ filter_form.save_reason }}
+            </label>
             <label class="checkbox-chip">
                 {{ filter_form.favorite_only }}
                 <span>お気に入りのみ</span>
+            </label>
+            <label class="checkbox-chip">
+                {{ filter_form.recheck_due_only }}
+                <span>再確認待ちのみ</span>
             </label>
         </div>
 

@@ -41,6 +41,18 @@
                     {% endfor %}
                 </ul>
             {% endif %}
+            {% if snapshot_diff.previous_snapshot %}
+                <p><strong>前回との差分:</strong> <a href="{{ snapshot_diff.previous_snapshot.get_absolute_url }}">Snapshot #{{ snapshot_diff.previous_snapshot.snapshot_no }}</a></p>
+                {% if snapshot_diff.items %}
+                    <ul class="inline-list inline-list--stack">
+                        {% for item in snapshot_diff.items %}
+                            <li><strong>{{ item.label }}:</strong> {{ item.before }} → {{ item.after }}</li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="muted">前回の取得から大きな変更はありません。</p>
+                {% endif %}
+            {% endif %}
             <p><strong>本文</strong></p>
             <pre class="excerpt">{{ snapshot.extracted_text|default:"-" }}</pre>
         </div>

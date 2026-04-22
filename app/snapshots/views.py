@@ -2,6 +2,7 @@ from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_GET
 
 from resources.models import Resource
+from resources.services import build_snapshot_diff_context
 from snapshots.models import Snapshot
 
 
@@ -17,5 +18,6 @@ def snapshot_detail(request, pk: int):
             "snapshot": snapshot,
             "tag_candidates": payload.get("tag_candidates", []),
             "similar_resources": similar_resources,
+            "snapshot_diff": build_snapshot_diff_context(snapshot),
         },
     )

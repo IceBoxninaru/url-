@@ -12,6 +12,58 @@
             <span class="live-indicator" data-autorefresh-status>自動更新中</span>
         </div>
     </div>
+    <form method="post" action="{% url 'resources:bulk_edit' %}" id="resource-bulk-form" class="bulk-edit-form">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <div class="bulk-edit-form__summary">
+            <label class="checkbox-chip">
+                <input type="checkbox" data-resource-select-all>
+                <span>一覧をまとめて選択</span>
+            </label>
+            <span class="muted" data-resource-selected-count>0 件選択中</span>
+        </div>
+        <div class="bulk-edit-form__grid">
+            <label>
+                <span class="filter-label">見直し状態</span>
+                {{ bulk_form.review_state }}
+            </label>
+            <label>
+                <span class="filter-label">保存理由</span>
+                {{ bulk_form.save_reason }}
+            </label>
+            <label>
+                <span class="filter-label">次の行動</span>
+                {{ bulk_form.next_action }}
+            </label>
+            <label>
+                <span class="filter-label">再確認日</span>
+                {{ bulk_form.recheck_at }}
+            </label>
+            <label>
+                <span class="filter-label">お気に入り</span>
+                {{ bulk_form.favorite_state }}
+            </label>
+            <label>
+                <span class="filter-label">一覧表示</span>
+                {{ bulk_form.visibility_state }}
+            </label>
+            <label class="bulk-edit-form__full">
+                <span class="filter-label">追加タグ</span>
+                {{ bulk_form.tags }}
+            </label>
+            <label class="bulk-edit-form__full">
+                <span class="filter-label">新しいタグを追加</span>
+                {{ bulk_form.new_tags }}
+            </label>
+        </div>
+        <label class="checkbox-chip checkbox-chip--inline">
+            {{ bulk_form.clear_recheck_at }}
+            <span>再確認日をクリア</span>
+        </label>
+        <div class="action-row action-row--start">
+            <button type="submit">選択したURLに適用</button>
+        </div>
+    </form>
     <div class="resource-list resource-list--compact">
         {% for resource in resources %}
             <article class="resource-card resource-card--compact {% if resource.latest_screenshot_path %}resource-card--with-preview{% endif %}">
@@ -23,7 +75,17 @@
 
                 <div class="resource-card__body">
                 <div class="resource-card__title">
-                    <h3><a href="{{ resource.get_absolute_url }}">{{ resource.display_title }}</a></h3>
+                    <div class="resource-card__title-main">
+                        <input
+                            type="checkbox"
+                            form="resource-bulk-form"
+                            name="resource_ids"
+                            value="{{ resource.id }}"
+                            data-resource-select-checkbox
+                            aria-label="{{ resource.display_title }} を一括操作対象に選択"
+                        >
+                        <h3><a href="{{ resource.get_absolute_url }}">{{ resource.display_title }}</a></h3>
+                    </div>
                     <div class="resource-card__chip-row">
                         <span class="status-chip status-{{ resource.current_status }}">{{ resource.get_current_status_display }}</span>
                         {% if resource.link_status != "unchecked" %}
@@ -38,12 +100,21 @@
                         {% if resource.search_only %}
                             <span class="review-chip review-search-only">検索専用</span>
                         {% endif %}
+                        {% if resource.save_reason %}
+                            <span class="review-chip review-save-reason">{{ resource.get_save_reason_display }}</span>
+                        {% endif %}
+                        {% if resource.is_recheck_due %}
+                            <span class="review-chip review-recheck-due">再確認待ち</span>
+                        {% endif %}
                     </div>
                 </div>
 
                 <div class="resource-card__meta-row">
                     <span class="resource-card__meta">{{ resource.domain }}</span>
                     <span class="resource-card__meta">更新: {{ resource.updated_at|date:"Y-m-d H:i" }}</span>
+                    {% if resource.recheck_at %}
+                        <span class="resource-card__meta">再確認: {{ resource.recheck_at|date:"Y-m-d" }}</span>
+                    {% endif %}
                     <span class="resource-card__meta">
                         リンク確認:
                         {% if resource.last_link_check_at %}
@@ -63,6 +134,9 @@
                         {% if resource.note and resource.latest_translation %} / {% endif %}
                         {% if resource.latest_translation %}{{ resource.latest_translation|truncatechars:110 }}{% endif %}
                     </p>
+                {% endif %}
+                {% if resource.next_action %}
+                    <p class="resource-card__snippet">次の行動: {{ resource.next_action|truncatechars:80 }}</p>
                 {% endif %}
 
                 <div class="resource-card__footer resource-card__footer--compact">

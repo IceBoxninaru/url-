@@ -49,6 +49,19 @@
         </dd>
         <dt>見直し状態</dt>
         <dd>{{ resource.get_review_state_display }}</dd>
+        <dt>保存理由</dt>
+        <dd>{% if resource.save_reason %}{{ resource.get_save_reason_display }}{% else %}-{% endif %}</dd>
+        <dt>次の行動</dt>
+        <dd>{{ resource.next_action|default:"-" }}</dd>
+        <dt>再確認日</dt>
+        <dd>
+            {% if resource.recheck_at %}
+                {{ resource.recheck_at|date:"Y-m-d" }}
+                {% if resource.is_recheck_due %} / 再確認待ち{% endif %}
+            {% else %}
+                -
+            {% endif %}
+        </dd>
         <dt>お気に入り</dt>
         <dd>{% if resource.favorite %}はい{% else %}いいえ{% endif %}</dd>
         <dt>一覧表示</dt>
@@ -86,6 +99,24 @@
         <p class="summary">
             現在のリンク状態は {{ resource.get_link_status_display }} ですが、保存済みスナップショットはこのまま閲覧できます。
         </p>
+    {% endif %}
+    {% if latest_snapshot_diff.previous_snapshot %}
+        <div class="summary">
+            <strong>前回との差分</strong>
+            <p>
+                比較対象:
+                <a href="{{ latest_snapshot_diff.previous_snapshot.get_absolute_url }}">Snapshot #{{ latest_snapshot_diff.previous_snapshot.snapshot_no }}</a>
+            </p>
+            {% if latest_snapshot_diff.items %}
+                <ul class="inline-list inline-list--stack">
+                    {% for item in latest_snapshot_diff.items %}
+                        <li><strong>{{ item.label }}:</strong> {{ item.before }} → {{ item.after }}</li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="muted">前回の取得から大きな変更はありません。</p>
+            {% endif %}
+        </div>
     {% endif %}
     <div class="detail-grid">
         <div>

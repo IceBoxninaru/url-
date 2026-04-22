@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 import shutil
 import subprocess
 import tempfile
@@ -251,6 +252,8 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
     def test_get_create_page(self):
         response = self.client.get(reverse("resources:create"))
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="new_tags"', html=False)
+        self.assertEqual(response.context["form"].fields["new_tags"].widget.__class__.__name__, "Textarea")
 
     def test_post_create_creates_resource_and_capture_job(self):
         response = self.client.post(
@@ -289,7 +292,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
                 "title_manual": "Search Only",
                 "search_only": "on",
                 "capture_images": "on",
-                "new_tags": "gamma, delta",
+                "new_tags": "gamma\ndelta",
             },
         )
 
@@ -324,7 +327,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(Resource.objects.count(), 1)
         self.assertContains(response, "このURLは登録済みです。")
 
-    def test_post_create_applies_note_template_and_review_state(self):
+    def test_post_create_saves_structured_reason_next_action_and_review_state(self):
         template_value = NOTE_TEMPLATE_CHOICES[0][0]
 
         response = self.client.post(
@@ -332,7 +335,9 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             {
                 "original_url": "https://example.com/post/template",
                 "title_manual": "Template",
-                "note_template": template_value,
+                "save_reason": template_value,
+                "next_action": "実装で試す",
+                "recheck_at": "2026-05-01",
                 "capture_images": "on",
                 "capture_videos": "on",
                 "review_state": ReviewState.NEEDS_REVIEW,
@@ -342,7 +347,9 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], reverse("resources:list"))
         resource = Resource.objects.get()
-        self.assertEqual(resource.note, template_value)
+        self.assertEqual(resource.save_reason, template_value)
+        self.assertEqual(resource.next_action, "実装で試す")
+        self.assertEqual(resource.recheck_at, date(2026, 5, 1))
         self.assertEqual(resource.review_state, ReviewState.NEEDS_REVIEW)
 
     def test_filter_by_query_tag_and_favorite(self):
@@ -458,6 +465,57 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         resources = list(response.context["resources"])
         self.assertEqual(resources, [resource_a])
 
+    def test_filter_by_save_reason(self):
+        resource_a = Resource.objects.create(
+            original_url="https://example.com/save-reason-a",
+            normalized_url="https://example.com/save-reason-a",
+            domain="example.com",
+            title_manual="Read Later",
+            save_reason=NOTE_TEMPLATE_CHOICES[0][0],
+        )
+        Resource.objects.create(
+            original_url="https://example.com/save-reason-b",
+            normalized_url="https://example.com/save-reason-b",
+            domain="example.com",
+            title_manual="Shopping",
+            save_reason=NOTE_TEMPLATE_CHOICES[-1][0],
+        )
+
+        response = self.client.get(
+            reverse("resources:list"),
+            {"save_reason": NOTE_TEMPLATE_CHOICES[0][0]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context["resources"]), [resource_a])
+
+    def test_filter_by_recheck_due_only(self):
+        due_resource = Resource.objects.create(
+            original_url="https://example.com/recheck-due",
+            normalized_url="https://example.com/recheck-due",
+            domain="example.com",
+            title_manual="Due",
+            recheck_at=timezone.localdate() - timedelta(days=1),
+        )
+        Resource.objects.create(
+            original_url="https://example.com/recheck-future",
+            normalized_url="https://example.com/recheck-future",
+            domain="example.com",
+            title_manual="Future",
+            recheck_at=timezone.localdate() + timedelta(days=3),
+        )
+        Resource.objects.create(
+            original_url="https://example.com/recheck-none",
+            normalized_url="https://example.com/recheck-none",
+            domain="example.com",
+            title_manual="None",
+        )
+
+        response = self.client.get(reverse("resources:list"), {"recheck_due_only": "on"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context["resources"]), [due_resource])
+
     def test_search_only_resource_is_hidden_until_query_matches(self):
         visible_resource = Resource.objects.create(
             original_url="https://example.com/visible",
@@ -520,6 +578,67 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertContains(response, snapshot.screenshot_full_path)
         self.assertContains(response, "リンク切れ")
         self.assertContains(response, "要確認")
+
+    def test_bulk_edit_updates_selected_resources(self):
+        resource_a = Resource.objects.create(
+            original_url="https://example.com/bulk-a",
+            normalized_url="https://example.com/bulk-a",
+            domain="example.com",
+            title_manual="Bulk A",
+        )
+        resource_b = Resource.objects.create(
+            original_url="https://example.com/bulk-b",
+            normalized_url="https://example.com/bulk-b",
+            domain="example.com",
+            title_manual="Bulk B",
+        )
+        resource_c = Resource.objects.create(
+            original_url="https://example.com/bulk-c",
+            normalized_url="https://example.com/bulk-c",
+            domain="example.com",
+            title_manual="Bulk C",
+        )
+
+        response = self.client.post(
+            reverse("resources:bulk_edit"),
+            {
+                "resource_ids": [str(resource_a.id), str(resource_b.id)],
+                "review_state": ReviewState.DONE,
+                "save_reason": NOTE_TEMPLATE_CHOICES[0][0],
+                "next_action": "比較する",
+                "recheck_at": "2026-05-02",
+                "favorite_state": "on",
+                "visibility_state": "search_only",
+                "tags": [self.tag_a.id],
+                "new_tags": "gamma",
+                "next": reverse("resources:list"),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        resource_a.refresh_from_db()
+        resource_b.refresh_from_db()
+        resource_c.refresh_from_db()
+
+        for resource in (resource_a, resource_b):
+            self.assertEqual(resource.review_state, ReviewState.DONE)
+            self.assertEqual(resource.save_reason, NOTE_TEMPLATE_CHOICES[0][0])
+            self.assertEqual(resource.next_action, "比較する")
+            self.assertEqual(resource.recheck_at, date(2026, 5, 2))
+            self.assertTrue(resource.favorite)
+            self.assertTrue(resource.search_only)
+            self.assertEqual(
+                list(resource.tags.order_by("name").values_list("name", flat=True)),
+                ["alpha", "gamma"],
+            )
+
+        self.assertEqual(resource_c.review_state, ReviewState.NONE)
+        self.assertEqual(resource_c.save_reason, "")
+        self.assertEqual(resource_c.next_action, "")
+        self.assertIsNone(resource_c.recheck_at)
+        self.assertFalse(resource_c.favorite)
+        self.assertFalse(resource_c.search_only)
+        self.assertFalse(resource_c.tags.exists())
 
     def test_list_fragment_returns_html_and_signature(self):
         resource = Resource.objects.create(
@@ -746,6 +865,103 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "リンク切れ")
         self.assertContains(response, "HTTP 404")
+
+    def test_detail_shows_latest_snapshot_diff(self):
+        resource = Resource.objects.create(
+            original_url="https://example.com/diff",
+            normalized_url="https://example.com/diff",
+            domain="example.com",
+            title_manual="Diff Entry",
+        )
+        Snapshot.objects.create(
+            resource=resource,
+            snapshot_no=1,
+            fetch_url=resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            page_title="Old title",
+            extracted_text="abc",
+            image_assets=[
+                {
+                    "source_url": "https://example.com/old.jpg",
+                    "path": f"storage/images/resource_{resource.id:04d}/snapshot_0001_img_01.jpg",
+                    "content_type": "image/jpeg",
+                    "size_bytes": 42,
+                }
+            ],
+        )
+        latest_snapshot = Snapshot.objects.create(
+            resource=resource,
+            snapshot_no=2,
+            fetch_url=resource.normalized_url,
+            fetch_method=FetchMethod.PLAYWRIGHT,
+            http_status=404,
+            page_title="New title",
+            extracted_text="abcdef",
+            error_message="HTTP 404",
+            image_assets=[
+                {
+                    "source_url": "https://example.com/new.jpg",
+                    "path": f"storage/images/resource_{resource.id:04d}/snapshot_0002_img_01.jpg",
+                    "content_type": "image/jpeg",
+                    "size_bytes": 42,
+                },
+                {
+                    "source_url": "https://example.com/new-2.jpg",
+                    "path": f"storage/images/resource_{resource.id:04d}/snapshot_0002_img_02.jpg",
+                    "content_type": "image/jpeg",
+                    "size_bytes": 42,
+                },
+            ],
+        )
+        resource.latest_snapshot = latest_snapshot
+        resource.save(update_fields=["latest_snapshot"])
+
+        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+            response = self.client.get(reverse("resources:detail", args=[resource.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "前回との差分")
+        self.assertContains(response, "Old title")
+        self.assertContains(response, "New title")
+        self.assertContains(response, "200")
+        self.assertContains(response, "404")
+        self.assertContains(response, "3 文字")
+        self.assertContains(response, "6 文字")
+
+    def test_snapshot_detail_shows_previous_snapshot_diff(self):
+        resource = Resource.objects.create(
+            original_url="https://example.com/snapshot-diff",
+            normalized_url="https://example.com/snapshot-diff",
+            domain="example.com",
+            title_manual="Snapshot Diff",
+        )
+        previous_snapshot = Snapshot.objects.create(
+            resource=resource,
+            snapshot_no=1,
+            fetch_url=resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            page_title="Before",
+            extracted_text="before",
+        )
+        current_snapshot = Snapshot.objects.create(
+            resource=resource,
+            snapshot_no=2,
+            fetch_url=resource.normalized_url,
+            fetch_method=FetchMethod.PLAYWRIGHT,
+            http_status=201,
+            page_title="After",
+            extracted_text="after text",
+        )
+
+        response = self.client.get(reverse("snapshots:detail", args=[current_snapshot.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "前回との差分")
+        self.assertContains(response, reverse("snapshots:detail", args=[previous_snapshot.id]))
+        self.assertContains(response, "Before")
+        self.assertContains(response, "After")
 
     def test_detail_displays_saved_videos(self):
         resource = Resource.objects.create(

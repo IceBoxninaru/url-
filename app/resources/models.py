@@ -7,6 +7,7 @@ from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.db import connection, models
 from django.db.models import Q
 from django.urls import reverse
+from django.utils import timezone
 
 
 class ResourceStatus(models.TextChoices):
@@ -31,6 +32,14 @@ class LinkStatus(models.TextChoices):
     ERROR = "error", "確認失敗"
 
 
+class SaveReason(models.TextChoices):
+    READ_LATER = "後で読む", "後で読む"
+    LIKELY_TO_DISAPPEAR = "消えそう", "消えそう"
+    REFERENCE_IMPLEMENTATION = "参考実装", "参考実装"
+    JOB_HUNTING = "就活用", "就活用"
+    SHOPPING_CANDIDATE = "買い物候補", "買い物候補"
+
+
 class ResourceQuerySet(models.QuerySet):
     def with_related(self):
         return self.select_related("latest_snapshot").prefetch_related("tags")
@@ -44,6 +53,8 @@ class ResourceQuerySet(models.QuerySet):
         favorite_only: bool = False,
         status: str = "",
         review_state: str = "",
+        save_reason: str = "",
+        recheck_due_only: bool = False,
     ):
         queryset = self.with_related()
         query = (query or "").strip()
@@ -53,6 +64,8 @@ class ResourceQuerySet(models.QuerySet):
                     SearchVector("original_url", weight="A")
                     + SearchVector("title_manual", weight="B")
                     + SearchVector("domain", weight="B")
+                    + SearchVector("save_reason", weight="B")
+                    + SearchVector("next_action", weight="B")
                     + SearchVector("note", weight="C")
                     + SearchVector("snapshots__extracted_text", weight="C")
                     + SearchVector("snapshots__ai_summary", weight="B")
@@ -71,6 +84,8 @@ class ResourceQuerySet(models.QuerySet):
                         | Q(normalized_url__icontains=query)
                         | Q(title_manual__icontains=query)
                         | Q(domain__icontains=query)
+                        | Q(save_reason__icontains=query)
+                        | Q(next_action__icontains=query)
                         | Q(note__icontains=query)
                         | Q(snapshots__extracted_text__icontains=query)
                         | Q(snapshots__ai_summary__icontains=query)
@@ -93,6 +108,10 @@ class ResourceQuerySet(models.QuerySet):
             queryset = queryset.filter(current_status=status)
         if review_state:
             queryset = queryset.filter(review_state=review_state)
+        if save_reason:
+            queryset = queryset.filter(save_reason=save_reason)
+        if recheck_due_only:
+            queryset = queryset.filter(recheck_at__isnull=False, recheck_at__lte=timezone.localdate())
         return queryset
 
 
@@ -109,6 +128,9 @@ class Resource(models.Model):
     domain = models.CharField(max_length=255, db_index=True)
     title_manual = models.CharField(max_length=255, blank=True)
     note = models.TextField(blank=True)
+    save_reason = models.CharField(max_length=40, choices=SaveReason.choices, blank=True, db_index=True)
+    next_action = models.CharField(max_length=255, blank=True)
+    recheck_at = models.DateField(null=True, blank=True, db_index=True)
     favorite = models.BooleanField(default=False)
     capture_images = models.BooleanField(default=True)
     capture_videos = models.BooleanField(default=True)
@@ -176,6 +198,10 @@ class Resource(models.Model):
         if self.latest_snapshot:
             return self.latest_snapshot.screenshot_full_path
         return ""
+
+    @property
+    def is_recheck_due(self) -> bool:
+        return bool(self.recheck_at and self.recheck_at <= timezone.localdate())
 
     @property
     def visibility_label(self) -> str:

@@ -19,6 +19,27 @@ function initResourceAutoRefresh() {
     }
   };
 
+  const syncBulkSelection = () => {
+    const currentPanel = getPanel();
+    const checkboxes = Array.from(currentPanel?.querySelectorAll("[data-resource-select-checkbox]") || []);
+    const checkedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+    const countNode = currentPanel?.querySelector("[data-resource-selected-count]");
+    const selectAllNode = currentPanel?.querySelector("[data-resource-select-all]");
+
+    if (countNode) {
+      countNode.textContent = `${checkedCount} 件選択中`;
+    }
+    if (selectAllNode) {
+      selectAllNode.checked = checkboxes.length > 0 && checkedCount === checkboxes.length;
+      selectAllNode.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+    }
+  };
+
+  const hasBulkSelection = () => {
+    const currentPanel = getPanel();
+    return Boolean(currentPanel?.querySelector("[data-resource-select-checkbox]:checked"));
+  };
+
   const buildFragmentUrl = () => {
     const currentPanel = getPanel();
     const baseUrl = currentPanel?.dataset.resourceFragmentUrl;
@@ -39,6 +60,10 @@ function initResourceAutoRefresh() {
       return;
     }
     if (document.hidden && !force) {
+      return;
+    }
+    if (hasBulkSelection()) {
+      setStatus("選択中");
       return;
     }
 
@@ -71,6 +96,7 @@ function initResourceAutoRefresh() {
         panel.outerHTML = payload.html;
         panel = getPanel();
         signature = panel?.dataset.resourceSignature || payload.signature;
+        syncBulkSelection();
         setStatus("更新済み");
         window.setTimeout(() => setStatus("自動更新中"), 1800);
       } else {
@@ -97,6 +123,26 @@ function initResourceAutoRefresh() {
       refreshList(true);
     }
   });
+
+  document.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+    if (target.matches("[data-resource-select-all]")) {
+      const currentPanel = getPanel();
+      currentPanel?.querySelectorAll("[data-resource-select-checkbox]").forEach((checkbox) => {
+        checkbox.checked = target.checked;
+      });
+      syncBulkSelection();
+      return;
+    }
+    if (target.matches("[data-resource-select-checkbox]")) {
+      syncBulkSelection();
+    }
+  });
+
+  syncBulkSelection();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
