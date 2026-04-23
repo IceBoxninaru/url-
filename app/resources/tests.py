@@ -209,6 +209,7 @@ class URLNormalizationTests(TestCase):
             "https://video.twimg.com/ext_tw_video/123/pu/pl/playlist.m3u8?tag=12&variant_version=1",
             "https://video.twimg.com/ext_tw_video/123/pu/pl/avc1/1280x720/playlist.m3u8?tag=12",
             "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/0/0/init.mp4?tag=12",
+            "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/0/0/720x1280/partial.mp4",
             "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/320x568/low.mp4?tag=12",
             "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/720x1280/high.mp4?tag=12",
         ]
@@ -256,6 +257,13 @@ class URLNormalizationTests(TestCase):
         self.assertFalse(
             is_observed_video_response(
                 "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/0/0/init.mp4?tag=12",
+                "x.com",
+                content_type="video/mp4",
+            )
+        )
+        self.assertFalse(
+            is_observed_video_response(
+                "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/0/0/720x1280/partial.mp4",
                 "x.com",
                 content_type="video/mp4",
             )
@@ -1658,25 +1666,66 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         }
 
         with patch("resources.services.httpx.Client", return_value=FakeHttpClient(responses)):
-            result = download_video_assets(
-                "https://x.com/example/status/1",
-                "<html></html>",
-                page_domain="x.com",
-                extra_candidates=[
-                    {
-                        "url": "https://video.twimg.com/tweet_video/sample.mp4",
-                        "source": "network_response",
-                        "media_kind": "video",
-                        "content_type": "video/mp4",
-                        "resource_type": "media",
-                    }
-                ],
-            )
+            with patch(
+                "resources.services.MediaProbe.probe_file",
+                return_value=MediaProbeResult(has_video=True, has_audio=False, duration_sec=8.0),
+            ):
+                result = download_video_assets(
+                    "https://x.com/example/status/1",
+                    "<html></html>",
+                    page_domain="x.com",
+                    extra_candidates=[
+                        {
+                            "url": "https://video.twimg.com/tweet_video/sample.mp4",
+                            "source": "network_response",
+                            "media_kind": "video",
+                            "content_type": "video/mp4",
+                            "resource_type": "media",
+                        }
+                    ],
+                )
 
         self.assertEqual(result.extraction_status, "success")
         self.assertEqual(result.candidate_urls, ["https://video.twimg.com/tweet_video/sample.mp4"])
         self.assertEqual(len(result.assets), 1)
         self.assertEqual(result.assets[0].source_url, "https://video.twimg.com/tweet_video/sample.mp4")
+        self.assertTrue(result.attempts[0]["has_video"])
+        self.assertEqual(result.attempts[0]["duration_sec"], 8.0)
+
+    def test_download_video_assets_rejects_invalid_x_mp4_after_probe(self):
+        responses = {
+            "https://video.twimg.com/tweet_video/broken.mp4": FakeStreamResponse(
+                "https://video.twimg.com/tweet_video/broken.mp4",
+                content_type="video/mp4",
+                content=b"not-a-real-video",
+            )
+        }
+
+        with patch("resources.services.httpx.Client", return_value=FakeHttpClient(responses)):
+            with patch(
+                "resources.services.MediaProbe.probe_file",
+                return_value=MediaProbeResult(failure_reason="moov atom not found"),
+            ):
+                result = download_video_assets(
+                    "https://x.com/example/status/1",
+                    "<html></html>",
+                    page_domain="x.com",
+                    extra_candidates=[
+                        {
+                            "url": "https://video.twimg.com/tweet_video/broken.mp4",
+                            "source": "network_response",
+                            "media_kind": "video",
+                            "content_type": "video/mp4",
+                            "resource_type": "media",
+                        }
+                    ],
+                )
+
+        self.assertEqual(result.extraction_status, "failed")
+        self.assertEqual(result.failure_reason, "moov atom not found")
+        self.assertEqual(result.assets, [])
+        self.assertEqual(result.attempts[0]["result"], "error")
+        self.assertEqual(result.attempts[0]["output_size_bytes"], len(b"not-a-real-video"))
 
     def test_download_video_assets_for_instagram_logs_duration_mismatch_skip(self):
         responses = {

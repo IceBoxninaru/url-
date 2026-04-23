@@ -513,6 +513,8 @@ def is_x_progressive_video_url(video_url: str) -> bool:
         return False
     if "/aud/" in parsed.path:
         return False
+    if re.search(r"/vid/[^/]+/\d+/\d+/\d+x\d+/", parsed.path):
+        return False
     if parsed.path.endswith("/init.mp4"):
         return False
     return True
@@ -1309,6 +1311,19 @@ class MediaProbe:
         )
 
 
+def validate_downloaded_video_file(path: Path) -> tuple[bool, MediaProbeResult, str]:
+    probe = MediaProbe.probe_file(path)
+    if probe.failure_reason:
+        if probe.failure_reason == "ffprobe_unavailable":
+            return True, probe, ""
+        return False, probe, probe.failure_reason
+    if not probe.has_video:
+        return False, probe, "missing_video_stream"
+    if probe.duration_sec is not None and probe.duration_sec <= 0:
+        return False, probe, "invalid_duration"
+    return True, probe, ""
+
+
 def remux_x_hls_to_mp4(video_url: str, max_size_bytes: int) -> tuple[CapturedVideo | None, dict]:
     attempt = {
         "candidate_url": video_url,
@@ -1320,6 +1335,9 @@ def remux_x_hls_to_mp4(video_url: str, max_size_bytes: int) -> tuple[CapturedVid
         "content_type": "",
         "content_length": "",
         "output_size_bytes": 0,
+        "has_video": False,
+        "has_audio": False,
+        "duration_sec": None,
     }
     ffmpeg = get_ffmpeg_executable()
     if not ffmpeg:
@@ -1378,6 +1396,17 @@ def remux_x_hls_to_mp4(video_url: str, max_size_bytes: int) -> tuple[CapturedVid
             delete_temp_file(temp_path)
             return None, attempt
 
+        is_valid, probe, reason = validate_downloaded_video_file(temp_path)
+        attempt["probe"] = probe.to_dict()
+        attempt["has_video"] = probe.has_video
+        attempt["has_audio"] = probe.has_audio
+        attempt["duration_sec"] = probe.duration_sec
+        if not is_valid:
+            attempt["result"] = "error"
+            attempt["reason"] = reason
+            delete_temp_file(temp_path)
+            return None, attempt
+
         attempt["result"] = "saved"
         return (
             CapturedVideo(
@@ -1385,6 +1414,14 @@ def remux_x_hls_to_mp4(video_url: str, max_size_bytes: int) -> tuple[CapturedVid
                 temp_path=temp_path,
                 size_bytes=size_bytes,
                 content_type="video/mp4",
+                metadata={
+                    "has_video": probe.has_video,
+                    "has_audio": probe.has_audio,
+                    "duration_sec": probe.duration_sec,
+                    "extraction_strategy": "x_hls_ffmpeg",
+                    "failure_reason": probe.failure_reason,
+                    "probe": probe.to_dict(),
+                },
             ),
             attempt,
         )
@@ -2264,6 +2301,9 @@ def download_video_assets(
                 "content_type": "",
                 "content_length": "",
                 "output_size_bytes": 0,
+                "has_video": False,
+                "has_audio": False,
+                "duration_sec": None,
             }
             try:
                 with client.stream("GET", video_url) as response:
@@ -2299,14 +2339,34 @@ def download_video_assets(
                         result.attempts.append(attempt)
                         continue
 
-                    attempt["result"] = "saved"
                     attempt["output_size_bytes"] = size_bytes
+                    is_valid, probe, reason = validate_downloaded_video_file(temp_path)
+                    attempt["probe"] = probe.to_dict()
+                    attempt["has_video"] = probe.has_video
+                    attempt["has_audio"] = probe.has_audio
+                    attempt["duration_sec"] = probe.duration_sec
+                    if not is_valid:
+                        attempt["result"] = "error"
+                        attempt["reason"] = reason
+                        delete_temp_file(temp_path)
+                        result.attempts.append(attempt)
+                        continue
+
+                    attempt["result"] = "saved"
                     result.assets.append(
                         CapturedVideo(
                             source_url=str(response.url),
                             temp_path=temp_path,
                             size_bytes=size_bytes,
                             content_type=content_type,
+                            metadata={
+                                "has_video": probe.has_video,
+                                "has_audio": probe.has_audio,
+                                "duration_sec": probe.duration_sec,
+                                "extraction_strategy": "direct",
+                                "failure_reason": probe.failure_reason,
+                                "probe": probe.to_dict(),
+                            },
                         )
                     )
                     if is_scoped_social_capture_domain(page_domain):
