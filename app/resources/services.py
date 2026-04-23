@@ -13,7 +13,7 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
+from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlparse, urlunparse
 
 import httpx
 import trafilatura
@@ -61,6 +61,9 @@ STOP_WORDS = {
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm", ".m4v"}
 AUDIO_EXTENSIONS = {".aac", ".m4a", ".mp3", ".ogg", ".oga", ".wav"}
+MEDIA_TEXT_SCAN_MAX_CHARS = 2_000_000
+RAW_MEDIA_URL_PATTERN = re.compile(r"https?:\\?/\\?/[^\"'<>\s]+")
+ENCODED_MEDIA_URL_PATTERN = re.compile(r"https?%3a%2f%2f[^\"'<>\s]+", re.IGNORECASE)
 TRANSLATION_MAX_SOURCE_CHARS = 1600
 TRANSLATION_MAX_CHUNK_CHARS = 400
 TRANSLATION_ENDPOINT = "https://translate.googleapis.com/translate_a/single"
@@ -639,13 +642,62 @@ def collect_video_urls(html: str, source_url: str, page_domain: str = "") -> lis
         for source in video.find_all("source"):
             push(source.get("src"))
 
+    for text_url in extract_media_candidate_urls_from_text(html, source_url, page_domain=page_domain):
+        push(text_url)
+
     return filter_video_candidate_urls(candidates, page_domain)
 
 
 def html_unescape_and_clean_url(raw_url: str) -> str:
     cleaned = html.unescape(raw_url).strip()
-    cleaned = re.sub(r'["\')\];,]+$', "", cleaned)
+    cleaned = re.sub(r'["\')\]\};,]+$', "", cleaned)
     return cleaned
+
+
+def decode_media_text_url(raw_url: str) -> str:
+    cleaned = html_unescape_and_clean_url(raw_url)
+    cleaned = (
+        cleaned.replace("\\/", "/")
+        .replace("\\u0026", "&")
+        .replace("\\U0026", "&")
+        .replace("\\u003d", "=")
+        .replace("\\U003D", "=")
+        .replace("\\u002f", "/")
+        .replace("\\U002F", "/")
+    )
+    if "%3a%2f%2f" in cleaned.lower():
+        cleaned = unquote(cleaned)
+    return html_unescape_and_clean_url(cleaned)
+
+
+def extract_media_candidate_urls_from_text(
+    text: str,
+    source_url: str,
+    *,
+    page_domain: str = "",
+    include_audio: bool = False,
+) -> list[str]:
+    if not text:
+        return []
+    scanned = text[:MEDIA_TEXT_SCAN_MAX_CHARS]
+    raw_matches = RAW_MEDIA_URL_PATTERN.findall(scanned)
+    raw_matches.extend(ENCODED_MEDIA_URL_PATTERN.findall(scanned))
+    candidates: list[str] = []
+    for raw_url in raw_matches:
+        decoded = decode_media_text_url(raw_url)
+        normalized = normalize_media_candidate_url(decoded, source_url)
+        if not normalized:
+            continue
+        if is_scoped_social_capture_domain(page_domain):
+            is_video = is_relevant_video_candidate(normalized, page_domain)
+            is_audio = include_audio and is_instagram_domain(page_domain) and is_probable_audio_url(normalized)
+            if not (is_video or is_audio):
+                continue
+        elif not is_probable_video_url(normalized) and not (include_audio and is_probable_audio_url(normalized)):
+            continue
+        if normalized not in candidates:
+            candidates.append(normalized)
+    return candidates
 
 
 def should_skip_image_url(image_url: str) -> bool:
@@ -731,6 +783,41 @@ def is_observed_media_request(media_url: str, page_domain: str, *, resource_type
     if resource_type == "media":
         return True
     return is_probable_media_url(media_url)
+
+
+def should_scan_media_response_body(
+    response_url: str,
+    page_domain: str,
+    *,
+    content_type: str = "",
+    content_length: str = "",
+) -> bool:
+    if not is_scoped_social_capture_domain(page_domain):
+        return False
+    try:
+        if content_length and int(content_length) > MEDIA_TEXT_SCAN_MAX_CHARS:
+            return False
+    except ValueError:
+        pass
+
+    normalized_type = content_type.split(";")[0].strip().lower()
+    is_text_like = (
+        normalized_type.endswith("json")
+        or normalized_type in {"text/plain", "text/html", "application/javascript", "text/javascript"}
+    )
+    parsed = urlparse(response_url.lower())
+    if is_x_domain(page_domain):
+        return (
+            parsed.netloc.endswith(("x.com", "twitter.com"))
+            and ("/i/api/" in parsed.path or "/graphql/" in parsed.path)
+            and (is_text_like or not normalized_type)
+        )
+    if is_instagram_domain(page_domain):
+        return (
+            parsed.netloc.endswith(("instagram.com", "cdninstagram.com", "fbcdn.net"))
+            and (is_text_like or not normalized_type)
+        )
+    return False
 
 
 def classify_media_candidate_kind(media_url: str, *, content_type: str = "", resource_type: str = "") -> str:
@@ -1129,14 +1216,23 @@ def cleanup_capture_result(result: CaptureResult) -> None:
 
 
 def get_ffmpeg_executable() -> str | None:
+    configured = getattr(settings, "CAPTURE_FFMPEG_PATH", "").strip()
+    if configured:
+        candidate = Path(configured)
+        if not candidate.is_absolute():
+            candidate = settings.ROOT_DIR / candidate
+        if candidate.exists() and candidate.is_file():
+            return str(candidate)
     try:
         import imageio_ffmpeg
     except Exception:
-        return None
-    try:
-        return imageio_ffmpeg.get_ffmpeg_exe()
-    except Exception:
-        return None
+        imageio_ffmpeg = None
+    if imageio_ffmpeg is not None:
+        try:
+            return imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            pass
+    return shutil.which("ffmpeg")
 
 
 def get_ffprobe_executable() -> str | None:
@@ -2515,28 +2611,61 @@ def fetch_with_playwright(
                     except Exception:
                         content_type = ""
                         content_length = ""
-                    if not is_observed_media_response(
+                    response_status = getattr(response, "status", None)
+                    if is_observed_media_response(
                         raw_url,
                         capture_domain,
                         content_type=content_type,
                         resource_type=resource_type,
                     ):
-                        return
-                    entry = {
-                        "url": raw_url,
-                        "resource_type": resource_type,
-                        "content_type": content_type,
-                        "content_length": content_length,
-                        "response_status": getattr(response, "status", None),
-                    }
-                    if entry not in observed_media_responses:
-                        observed_media_responses.append(entry)
-                    if classify_media_candidate_kind(
+                        entry = {
+                            "url": raw_url,
+                            "resource_type": resource_type,
+                            "content_type": content_type,
+                            "content_length": content_length,
+                            "response_status": response_status,
+                        }
+                        if entry not in observed_media_responses:
+                            observed_media_responses.append(entry)
+                        if classify_media_candidate_kind(
+                            raw_url,
+                            content_type=content_type,
+                            resource_type=resource_type,
+                        ) != "audio" and raw_url not in observed_video_urls:
+                            observed_video_urls.append(raw_url)
+
+                    if not capture_videos or not should_scan_media_response_body(
                         raw_url,
+                        capture_domain,
                         content_type=content_type,
-                        resource_type=resource_type,
-                    ) != "audio" and raw_url not in observed_video_urls:
-                        observed_video_urls.append(raw_url)
+                        content_length=content_length,
+                    ):
+                        return
+                    try:
+                        response_text = response.text()
+                    except Exception:
+                        return
+                    for candidate_url in extract_media_candidate_urls_from_text(
+                        response_text,
+                        raw_url,
+                        page_domain=capture_domain,
+                        include_audio=True,
+                    ):
+                        candidate_entry = {
+                            "url": candidate_url,
+                            "resource_type": "response_body",
+                            "content_type": "",
+                            "content_length": "",
+                            "response_status": response_status,
+                            "source_response_url": raw_url,
+                        }
+                        if candidate_entry not in observed_media_responses:
+                            observed_media_responses.append(candidate_entry)
+                        if (
+                            classify_media_candidate_kind(candidate_url, resource_type="response_body") != "audio"
+                            and candidate_url not in observed_video_urls
+                        ):
+                            observed_video_urls.append(candidate_url)
 
                 page.on("request", remember_media_request)
                 page.on("response", remember_media_response)

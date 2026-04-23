@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+import builtins
 import shutil
 import subprocess
 import tempfile
@@ -28,6 +29,7 @@ from resources.services import (
     download_video_assets,
     enqueue_capture_job,
     filter_video_candidate_urls,
+    get_ffmpeg_executable,
     get_ffprobe_executable,
     get_playwright_profile_path,
     get_playwright_storage_state_path,
@@ -163,6 +165,43 @@ class URLNormalizationTests(TestCase):
             "https://scontent.cdninstagram.com/o1/v/t16/f2/m86/ABCDEFG.mp4?_nc_ht=scontent.cdninstagram.com",
         )
 
+    def test_collect_video_urls_extracts_escaped_x_urls_from_script_payloads(self):
+        html = """
+        <html>
+            <body>
+                <script>
+                    {"variants":[
+                        {"url":"https:\\/\\/video.twimg.com\\/ext_tw_video\\/123\\/pu\\/pl\\/playlist.m3u8?tag=12\\u0026variant_version=1"},
+                        {"url":"https:\\/\\/video.twimg.com\\/ext_tw_video\\/123\\/pu\\/vid\\/avc1\\/720x1280\\/sample.mp4?tag=12\\u0026container=fmp4"}
+                    ]}
+                </script>
+            </body>
+        </html>
+        """
+
+        urls = collect_video_urls(html, "https://x.com/example/status/1", page_domain="x.com")
+
+        self.assertEqual(
+            urls,
+            [
+                "https://video.twimg.com/ext_tw_video/123/pu/pl/playlist.m3u8?tag=12&variant_version=1",
+                "https://video.twimg.com/ext_tw_video/123/pu/vid/avc1/720x1280/sample.mp4?tag=12&container=fmp4",
+            ],
+        )
+
+    def test_collect_video_urls_extracts_url_encoded_x_urls(self):
+        html = (
+            "https%3A%2F%2Fvideo.twimg.com%2Ftweet_video%2Fsample.mp4"
+            "%3Ftag%3D12%26container%3Dfmp4"
+        )
+
+        urls = collect_video_urls(html, "https://x.com/example/status/1", page_domain="x.com")
+
+        self.assertEqual(
+            urls,
+            ["https://video.twimg.com/tweet_video/sample.mp4?tag=12&container=fmp4"],
+        )
+
     def test_filter_video_candidate_urls_for_x_prefers_master_playlist_and_skips_init_fragment(self):
         candidates = [
             "https://video.twimg.com/ext_tw_video/123/pu/pl/playlist.m3u8?tag=12&variant_version=1",
@@ -228,6 +267,18 @@ class URLNormalizationTests(TestCase):
     @override_settings(CAPTURE_X_STORAGE_STATE_PATH="storage/auth/x.json")
     def test_get_playwright_storage_state_path_returns_none_when_file_missing(self):
         self.assertIsNone(get_playwright_storage_state_path("x.com"))
+
+    def test_get_ffmpeg_executable_falls_back_to_system_binary(self):
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "imageio_ffmpeg":
+                raise ImportError("missing imageio ffmpeg")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            with patch("resources.services.shutil.which", return_value="/usr/bin/ffmpeg"):
+                self.assertEqual(get_ffmpeg_executable(), "/usr/bin/ffmpeg")
 
     @override_settings(CAPTURE_X_STORAGE_STATE_PATH="storage/auth/x.json")
     def test_get_playwright_storage_state_path_returns_file_for_x(self):
