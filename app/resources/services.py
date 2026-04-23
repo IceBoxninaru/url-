@@ -2800,7 +2800,16 @@ def fetch_with_playwright(
 def choose_capture_result(resource: Resource) -> CaptureResult:
     source_url = resource.normalized_url or resource.original_url
     capture_images = resource.capture_images
-    capture_videos = resource.capture_videos and supports_video_capture(resource.domain)
+    supports_videos = supports_video_capture(resource.domain)
+    if not resource.capture_videos and supports_videos:
+        logger.warning(
+            "Video capture is disabled by resource preference; skipping video download. "
+            "resource_id=%s domain=%s url=%s",
+            resource.pk,
+            resource.domain,
+            source_url,
+        )
+    capture_videos = resource.capture_videos and supports_videos
     force_playwright = matches_configured_domain(resource.domain, settings.CAPTURE_JS_FALLBACK_DOMAINS)
     http_result = fetch_with_http(
         source_url,

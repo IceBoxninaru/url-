@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 import builtins
+from io import StringIO
 import shutil
 import subprocess
 import tempfile
@@ -8,6 +9,7 @@ from unittest.mock import patch
 import os
 
 from django.conf import settings
+from django.core.management import call_command
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -1290,11 +1292,15 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             extracted_text="body",
         )
 
-        with patch("resources.services.fetch_with_http", return_value=http_result) as mocked_http:
-            with patch("resources.services.should_use_playwright", return_value=False):
-                result = choose_capture_result(self.resource)
+        with self.assertLogs("resources.services", level="WARNING") as captured_logs:
+            with patch("resources.services.fetch_with_http", return_value=http_result) as mocked_http:
+                with patch("resources.services.should_use_playwright", return_value=False):
+                    result = choose_capture_result(self.resource)
 
         self.assertEqual(result, http_result)
+        self.assertTrue(
+            any("Video capture is disabled by resource preference" in log for log in captured_logs.output)
+        )
         mocked_http.assert_called_once_with(
             self.resource.normalized_url,
             capture_images=False,
@@ -1848,3 +1854,78 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertFalse(Resource.objects.filter(pk=self.resource.id).exists())
+
+
+class ResetCaptureFlagsCommandTests(StorageOverrideMixin, TestCase):
+    def create_storage_file(self, root: Path, resource_id: int, filename: str) -> Path:
+        resource_dir = root / f"resource_{resource_id:04d}"
+        resource_dir.mkdir(parents=True, exist_ok=True)
+        file_path = resource_dir / filename
+        file_path.write_bytes(b"stored-asset")
+        return file_path
+
+    def test_reset_capture_flags_dry_run_does_not_update_preferences(self):
+        resource = Resource.objects.create(
+            original_url="https://x.com/example/status/1",
+            normalized_url="https://x.com/example/status/1",
+            domain="x.com",
+            title_manual="Disabled Capture",
+            capture_images=False,
+            capture_videos=False,
+        )
+        self.create_storage_file(settings.IMAGE_STORAGE_ROOT, resource.id, "snapshot_0001_img_01.jpg")
+        self.create_storage_file(settings.VIDEO_STORAGE_ROOT, resource.id, "snapshot_0001_vid_01.mp4")
+
+        output = StringIO()
+        call_command("reset_capture_flags", "--dry-run", stdout=output)
+
+        resource.refresh_from_db()
+        self.assertFalse(resource.capture_images)
+        self.assertFalse(resource.capture_videos)
+        rendered = output.getvalue()
+        self.assertIn("Resources to update: 1", rendered)
+        self.assertIn("capture_images false -> true: 1 (with files: 1, without files: 0)", rendered)
+        self.assertIn("capture_videos false -> true: 1 (with files: 1, without files: 0)", rendered)
+        self.assertIn("Dry run only. No database rows were changed.", rendered)
+
+    def test_reset_capture_flags_updates_disabled_preferences_with_yes(self):
+        with_files = Resource.objects.create(
+            original_url="https://www.instagram.com/reel/1",
+            normalized_url="https://www.instagram.com/reel/1",
+            domain="instagram.com",
+            title_manual="Video With Files",
+            capture_images=True,
+            capture_videos=False,
+        )
+        without_files = Resource.objects.create(
+            original_url="https://example.com/article",
+            normalized_url="https://example.com/article",
+            domain="example.com",
+            title_manual="No Files",
+            capture_images=False,
+            capture_videos=False,
+        )
+        already_enabled = Resource.objects.create(
+            original_url="https://example.com/enabled",
+            normalized_url="https://example.com/enabled",
+            domain="example.com",
+            title_manual="Already Enabled",
+        )
+        self.create_storage_file(settings.VIDEO_STORAGE_ROOT, with_files.id, "snapshot_0001_vid_01.mp4")
+
+        output = StringIO()
+        call_command("reset_capture_flags", "--yes", stdout=output)
+
+        with_files.refresh_from_db()
+        without_files.refresh_from_db()
+        already_enabled.refresh_from_db()
+        self.assertTrue(with_files.capture_images)
+        self.assertTrue(with_files.capture_videos)
+        self.assertTrue(without_files.capture_images)
+        self.assertTrue(without_files.capture_videos)
+        self.assertTrue(already_enabled.capture_images)
+        self.assertTrue(already_enabled.capture_videos)
+        rendered = output.getvalue()
+        self.assertIn("Resources to update: 2", rendered)
+        self.assertIn("capture_videos false -> true: 2 (with files: 1, without files: 1)", rendered)
+        self.assertIn("Updated resources: 2", rendered)
