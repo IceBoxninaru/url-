@@ -1505,7 +1505,10 @@ input[type="checkbox"] {
     }
 
     .top-search {
+        flex: none;
         max-width: none;
+        width: 100%;
+        height: auto;
     }
 
     .metric-grid,
