@@ -33,7 +33,7 @@
                 <tbody>
                     {% for resource in resources %}
                         <tr>
-                            <td>
+                            <td data-label="タイトル">
                                 <div class="resource-table__identity">
                                     {% if resource.latest_screenshot_path %}
                                         <img
@@ -67,32 +67,32 @@
                                     </div>
                                 </div>
                             </td>
-                            <td>
+                            <td data-label="保存理由">
                                 {% if resource.save_reason %}
                                     <span class="tone-chip tone-chip--neutral">{{ resource.get_save_reason_display }}</span>
                                 {% else %}
                                     <span class="muted">-</span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td data-label="見直し状態">
                                 {% if resource.review_state != "none" %}
                                     <span class="status-chip status-chip--review-{{ resource.review_state }}">{{ resource.get_review_state_display }}</span>
                                 {% else %}
                                     <span class="muted">未設定</span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td data-label="取得状態">
                                 <span class="status-chip status-chip--resource-{{ resource.current_status }}">{{ resource.get_current_status_display }}</span>
                             </td>
-                            <td>
+                            <td data-label="リンク状態">
                                 {% if resource.link_status != "unchecked" %}
                                     <span class="status-chip status-chip--link-{{ resource.link_status }}">{{ resource.get_link_status_display }}</span>
                                 {% else %}
                                     <span class="muted">未確認</span>
                                 {% endif %}
                             </td>
-                            <td>{{ resource.next_action|default:"-" }}</td>
-                            <td>
+                            <td data-label="次の行動">{{ resource.next_action|default:"-" }}</td>
+                            <td data-label="再確認日">
                                 {% if resource.recheck_at %}
                                     {{ resource.recheck_at|date:"Y/m/d" }}
                                     {% if resource.is_recheck_due %}
@@ -102,7 +102,7 @@
                                     <span class="muted">-</span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td data-label="タグ">
                                 <div class="tag-chip-list">
                                     {% for tag in resource.tags.all %}
                                         <span class="tag-chip" style="--tag-color: {{ tag.color }}">{{ tag.name }}</span>
@@ -111,10 +111,10 @@
                                     {% endfor %}
                                 </div>
                             </td>
-                            <td class="resource-table__star">
+                            <td class="resource-table__star" data-label="お気に入り">
                                 {% if resource.favorite %}★{% else %}☆{% endif %}
                             </td>
-                            <td>
+                            <td data-label="最終更新">
                                 <p>{{ resource.updated_at|date:"Y/m/d" }}</p>
                                 <p class="muted">{{ resource.updated_at|date:"H:i" }}</p>
                                 {% if resource.latest_translation %}
