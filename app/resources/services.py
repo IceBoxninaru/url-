@@ -288,15 +288,6 @@ def get_capture_files(snapshot: Snapshot | None) -> tuple[list[dict], list[dict]
         ),
     )
 
-
-def sync_capture_flags(resource: Resource) -> tuple[list[dict], list[dict]]:
-    image_files, video_files = get_capture_files(resource.latest_snapshot)
-    resource.capture_images = bool(image_files)
-    resource.capture_videos = bool(video_files)
-    resource.save(update_fields=["capture_images", "capture_videos", "updated_at"])
-    return image_files, video_files
-
-
 def get_previous_snapshot(snapshot: Snapshot | None) -> Snapshot | None:
     if snapshot is None:
         return None
@@ -499,7 +490,11 @@ def score_video_candidate(video_url: str) -> int:
 
 def is_x_hls_playlist_url(video_url: str) -> bool:
     parsed = urlparse(video_url.lower())
-    return parsed.netloc.endswith("video.twimg.com") and parsed.path.endswith(".m3u8") and "/pl/" in parsed.path
+    return (
+        parsed.netloc.endswith("video.twimg.com")
+        and parsed.path.endswith(".m3u8")
+        and "/mp4a/" not in parsed.path
+    )
 
 
 def is_x_master_playlist_url(video_url: str) -> bool:
@@ -515,9 +510,9 @@ def is_x_progressive_video_url(video_url: str) -> bool:
         return False
     if "/aud/" in parsed.path:
         return False
-    if "/0/0/" in parsed.path:
+    if parsed.path.endswith("/init.mp4"):
         return False
-    return "/vid/" in parsed.path
+    return True
 
 
 def score_x_video_candidate(video_url: str) -> int:
@@ -1036,6 +1031,52 @@ def collect_playwright_media_candidates(
             candidates.append(candidate)
 
     return merge_media_candidates(candidates)
+
+
+def collect_video_candidate_details(
+    source_url: str,
+    html: str,
+    *,
+    extra_urls: list[str] | None = None,
+    page_domain: str = "",
+    extra_candidates: list[dict] | None = None,
+) -> list[dict]:
+    candidates: list[dict] = []
+    for video_url in collect_video_urls(html, source_url, page_domain=page_domain):
+        candidate = build_media_candidate(
+            video_url,
+            source_url,
+            source="html",
+            page_domain=page_domain,
+        )
+        if candidate is not None:
+            candidates.append(candidate)
+    for extra_url in extra_urls or []:
+        candidate = build_media_candidate(
+            extra_url,
+            source_url,
+            source="extra_url",
+            page_domain=page_domain,
+        )
+        if candidate is not None:
+            candidates.append(candidate)
+    for extra_candidate in extra_candidates or []:
+        candidate = build_media_candidate(
+            extra_candidate.get("url", ""),
+            source_url,
+            source=extra_candidate.get("source", "extra_candidate"),
+            page_domain=page_domain,
+            content_type=extra_candidate.get("content_type", ""),
+            content_length=extra_candidate.get("content_length", ""),
+            resource_type=extra_candidate.get("resource_type", ""),
+            response_status=extra_candidate.get("response_status"),
+        )
+        if candidate is not None:
+            candidates.append(candidate)
+    merged = merge_media_candidates(candidates)
+    if is_x_domain(page_domain):
+        return sorted(merged, key=lambda candidate: score_x_video_candidate(candidate.get("url", "")), reverse=True)
+    return merged
 
 
 def guess_image_extension(source_url: str, content_type: str) -> str:
@@ -1562,6 +1603,93 @@ def download_instagram_candidate(client: httpx.Client, candidate: dict) -> tuple
         return None, attempt
 
 
+def download_instagram_candidate_without_probe(client: httpx.Client, candidate: dict) -> tuple[CapturedVideo | None, dict]:
+    temp_path: Path | None = None
+    attempt = {
+        "candidate_url": candidate.get("url", ""),
+        "candidate_sources": candidate.get("sources", []),
+        "candidate_media_kind": candidate.get("media_kind", "unknown"),
+        "final_url": "",
+        "mode": "instagram_direct_no_probe",
+        "result": "skipped",
+        "reason": "",
+        "response_status": candidate.get("response_status"),
+        "content_type": candidate.get("content_type", ""),
+        "content_length": candidate.get("content_length", ""),
+        "output_size_bytes": 0,
+        "has_video": True,
+        "has_audio": None,
+        "duration_sec": None,
+        "extraction_status": "success",
+        "extraction_strategy": "instagram_direct_no_probe",
+    }
+    try:
+        with client.stream("GET", candidate["url"]) as response:
+            attempt["final_url"] = str(response.url)
+            attempt["response_status"] = response.status_code
+            attempt["content_type"] = response.headers.get("content-type", "")
+            attempt["content_length"] = response.headers.get("content-length", "")
+            if response.status_code >= 400:
+                attempt["reason"] = f"http_{response.status_code}"
+                return None, attempt
+            content_type = response.headers.get("content-type", "")
+            if not is_probable_video_url(str(response.url), content_type):
+                attempt["reason"] = "not_video"
+                return None, attempt
+
+            temp_path = create_temp_download_path(guess_video_extension(str(response.url), content_type))
+            size_bytes = 0
+            too_large = False
+            with temp_path.open("wb") as handle:
+                for chunk in response.iter_bytes():
+                    if not chunk:
+                        continue
+                    size_bytes += len(chunk)
+                    if size_bytes > settings.CAPTURE_MAX_VIDEO_BYTES:
+                        too_large = True
+                        break
+                    handle.write(chunk)
+            if too_large or size_bytes == 0:
+                attempt["reason"] = "too_large" if too_large else "empty_output"
+                delete_temp_file(temp_path)
+                return None, attempt
+
+            attempt["result"] = "saved"
+            attempt["output_size_bytes"] = size_bytes
+            return (
+                CapturedVideo(
+                    source_url=str(response.url),
+                    temp_path=temp_path,
+                    size_bytes=size_bytes,
+                    content_type=content_type,
+                    metadata={
+                        "has_video": True,
+                        "has_audio": None,
+                        "duration_sec": None,
+                        "extraction_strategy": "instagram_direct_no_probe",
+                        "failure_reason": "",
+                        "probe": {
+                            "has_video": None,
+                            "has_audio": None,
+                            "duration_sec": None,
+                            "video_streams": None,
+                            "audio_streams": None,
+                            "format_name": "",
+                            "probe_tool": "",
+                            "failure_reason": "ffprobe_unavailable",
+                            "raw": {},
+                        },
+                    },
+                ),
+                attempt,
+            )
+    except Exception as exc:
+        attempt["result"] = "error"
+        attempt["reason"] = str(exc) or "download_exception"
+        delete_temp_file(temp_path)
+        return None, attempt
+
+
 def pick_instagram_merge_pair(
     video_candidates: list[DownloadedMediaCandidate],
     audio_candidates: list[DownloadedMediaCandidate],
@@ -1766,6 +1894,22 @@ def download_instagram_video_assets(
         return result
     ffprobe = get_ffprobe_executable()
     if not ffprobe:
+        primary_candidates = [candidate for candidate in candidate_details if candidate.get("media_kind") != "audio"]
+        with httpx.Client(
+            follow_redirects=True,
+            timeout=settings.CAPTURE_HTTP_TIMEOUT,
+            headers={"User-Agent": settings.CAPTURE_HTTP_USER_AGENT},
+        ) as client:
+            for candidate in primary_candidates:
+                captured_video, attempt = download_instagram_candidate_without_probe(client, candidate)
+                result.attempts.append(attempt)
+                if captured_video is not None:
+                    result.assets.append(captured_video)
+                    result.extraction_status = "success"
+                    result.extraction_strategy = "instagram_direct_no_probe"
+                    result.selected_asset = captured_video.metadata
+                    summarize_instagram_video_result(source_url, result, candidate_details, [])
+                    return result
         append_instagram_skip_log(
             result.skip_logs,
             phase="probe_setup",
@@ -1974,16 +2118,22 @@ def download_video_assets(
             page_domain=page_domain,
         )
 
-    video_urls = collect_video_urls(html, source_url, page_domain=page_domain)
-    for extra_url in extra_urls or []:
-        normalized = normalize_media_candidate_url(extra_url, source_url)
-        if not normalized:
-            continue
-        if normalized not in video_urls:
-            video_urls.append(normalized)
-    video_urls = filter_video_candidate_urls(video_urls, page_domain)
-    result = DownloadedVideoAssets(candidate_urls=list(video_urls))
-    if not video_urls:
+    candidate_details = collect_video_candidate_details(
+        source_url,
+        html,
+        extra_urls=extra_urls,
+        page_domain=page_domain,
+        extra_candidates=extra_candidates,
+    )
+    video_candidates = [candidate for candidate in candidate_details if candidate.get("media_kind") != "audio"]
+    result = DownloadedVideoAssets(
+        candidate_urls=[candidate["url"] for candidate in video_candidates],
+        candidate_details=candidate_details,
+    )
+    if not video_candidates:
+        result.extraction_status = "failed"
+        result.extraction_strategy = "video_candidates"
+        result.failure_reason = "no_media_candidates"
         return result
 
     with httpx.Client(
@@ -1991,11 +2141,14 @@ def download_video_assets(
         timeout=settings.CAPTURE_HTTP_TIMEOUT,
         headers={"User-Agent": settings.CAPTURE_HTTP_USER_AGENT},
     ) as client:
-        for video_url in video_urls:
+        for candidate in video_candidates:
+            video_url = candidate["url"]
             if len(result.assets) >= settings.CAPTURE_MAX_VIDEOS:
                 break
             if is_x_domain(page_domain) and is_x_hls_playlist_url(video_url):
                 captured_video, attempt = remux_x_hls_to_mp4(video_url, settings.CAPTURE_MAX_VIDEO_BYTES)
+                attempt["candidate_sources"] = candidate.get("sources", [])
+                attempt["candidate_media_kind"] = candidate.get("media_kind", "unknown")
                 result.attempts.append(attempt)
                 if captured_video is not None:
                     result.assets.append(captured_video)
@@ -2005,6 +2158,8 @@ def download_video_assets(
             temp_path: Path | None = None
             attempt = {
                 "candidate_url": video_url,
+                "candidate_sources": candidate.get("sources", []),
+                "candidate_media_kind": candidate.get("media_kind", "unknown"),
                 "final_url": "",
                 "mode": "direct",
                 "result": "skipped",
@@ -2066,6 +2221,13 @@ def download_video_assets(
                 attempt["reason"] = "download_exception"
                 delete_temp_file(temp_path)
             result.attempts.append(attempt)
+    if result.assets:
+        result.extraction_status = "success"
+        result.extraction_strategy = "x_hls_ffmpeg" if is_x_domain(page_domain) else "direct"
+    elif result.attempts:
+        result.extraction_status = "failed"
+        result.extraction_strategy = "download"
+        result.failure_reason = result.attempts[-1].get("reason", "download_failed")
     return result
 
 
@@ -2873,7 +3035,6 @@ def execute_capture_job(job: CaptureJob) -> Snapshot:
             resource.latest_snapshot = snapshot
             resource.current_status = status_from_snapshot(snapshot)
             resource.save(update_fields=["normalized_url", "domain", "latest_snapshot", "current_status", "updated_at"])
-            sync_capture_flags(resource)
         if resource.current_status == ResourceStatus.FETCH_FAILED:
             raise RuntimeError(snapshot.error_message or "Capture failed.")
         if snapshot.is_success:

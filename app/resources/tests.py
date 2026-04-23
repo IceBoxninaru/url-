@@ -196,6 +196,14 @@ class URLNormalizationTests(TestCase):
             ],
         )
 
+    def test_filter_video_candidate_urls_for_x_accepts_tweet_video_mp4(self):
+        candidates = ["https://video.twimg.com/tweet_video/sample.mp4"]
+
+        self.assertEqual(
+            filter_video_candidate_urls(candidates, "x.com"),
+            ["https://video.twimg.com/tweet_video/sample.mp4"],
+        )
+
     def test_is_observed_video_response_for_x_accepts_playlist_and_rejects_init_fragment(self):
         self.assertTrue(
             is_observed_video_response(
@@ -1373,7 +1381,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         self.assertTrue(video_path.exists())
         self.assertFalse(temp_path.exists())
 
-    def test_capture_success_syncs_capture_flags_from_saved_files(self):
+    def test_capture_success_does_not_override_capture_preferences(self):
         self.resource.capture_images = False
         self.resource.capture_videos = False
         self.resource.save(update_fields=["capture_images", "capture_videos"])
@@ -1408,8 +1416,8 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             self.assertTrue(run_one_job())
 
         self.resource.refresh_from_db()
-        self.assertTrue(self.resource.capture_images)
-        self.assertTrue(self.resource.capture_videos)
+        self.assertFalse(self.resource.capture_images)
+        self.assertFalse(self.resource.capture_videos)
 
     def test_capture_success_persists_downloaded_video_metadata(self):
         self.resource.domain = "instagram.com"
@@ -1552,24 +1560,66 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         self.assertEqual(result.summary["audio_only_count"], 1)
 
     def test_download_video_assets_for_instagram_requires_ffprobe(self):
-        result = download_video_assets(
-            "https://www.instagram.com/reel/example/",
-            "<html></html>",
-            page_domain="instagram.com",
-            extra_candidates=[
-                {
-                    "url": "https://scontent.cdninstagram.com/video.mp4",
-                    "source": "network_response",
-                    "media_kind": "video",
-                    "content_type": "video/mp4",
-                    "resource_type": "media",
-                }
-            ],
-        )
+        responses = {
+            "https://scontent.cdninstagram.com/video.mp4": FakeStreamResponse(
+                "https://scontent.cdninstagram.com/video.mp4",
+                content_type="video/mp4",
+                content=b"video-track",
+            )
+        }
 
-        self.assertEqual(result.extraction_status, "failed")
-        self.assertEqual(result.failure_reason, "ffprobe_required")
-        self.assertEqual(result.skip_logs[0]["reason"], "ffprobe_required")
+        with patch("resources.services.httpx.Client", return_value=FakeHttpClient(responses)):
+            result = download_video_assets(
+                "https://www.instagram.com/reel/example/",
+                "<html></html>",
+                page_domain="instagram.com",
+                extra_candidates=[
+                    {
+                        "url": "https://scontent.cdninstagram.com/video.mp4",
+                        "source": "network_response",
+                        "media_kind": "video",
+                        "content_type": "video/mp4",
+                        "resource_type": "media",
+                    }
+                ],
+            )
+
+        self.assertEqual(result.extraction_status, "success")
+        self.assertEqual(result.extraction_strategy, "instagram_direct_no_probe")
+        self.assertEqual(len(result.assets), 1)
+        self.assertTrue(result.assets[0].metadata["has_video"])
+        self.assertIsNone(result.assets[0].metadata["has_audio"])
+        self.assertEqual(result.attempts[0]["mode"], "instagram_direct_no_probe")
+
+    def test_download_video_assets_for_x_uses_playwright_extra_candidates(self):
+        responses = {
+            "https://video.twimg.com/tweet_video/sample.mp4": FakeStreamResponse(
+                "https://video.twimg.com/tweet_video/sample.mp4",
+                content_type="video/mp4",
+                content=b"x-video-track",
+            )
+        }
+
+        with patch("resources.services.httpx.Client", return_value=FakeHttpClient(responses)):
+            result = download_video_assets(
+                "https://x.com/example/status/1",
+                "<html></html>",
+                page_domain="x.com",
+                extra_candidates=[
+                    {
+                        "url": "https://video.twimg.com/tweet_video/sample.mp4",
+                        "source": "network_response",
+                        "media_kind": "video",
+                        "content_type": "video/mp4",
+                        "resource_type": "media",
+                    }
+                ],
+            )
+
+        self.assertEqual(result.extraction_status, "success")
+        self.assertEqual(result.candidate_urls, ["https://video.twimg.com/tweet_video/sample.mp4"])
+        self.assertEqual(len(result.assets), 1)
+        self.assertEqual(result.assets[0].source_url, "https://video.twimg.com/tweet_video/sample.mp4")
 
     def test_download_video_assets_for_instagram_logs_duration_mismatch_skip(self):
         responses = {
@@ -1637,8 +1687,8 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         self.resource.refresh_from_db()
         self.assertEqual(snapshot.error_message, "timeout")
         self.assertEqual(self.resource.current_status, ResourceStatus.FETCH_FAILED)
-        self.assertFalse(self.resource.capture_images)
-        self.assertFalse(self.resource.capture_videos)
+        self.assertTrue(self.resource.capture_images)
+        self.assertTrue(self.resource.capture_videos)
         self.assertEqual(job.status, JobStatus.RETRY_WAIT)
         self.assertEqual(job.attempt_count, 1)
         self.assertGreater(job.scheduled_at, timezone.now())
