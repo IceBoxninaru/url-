@@ -1,14 +1,17 @@
 <section
-    class="panel"
+    class="panel resource-list-panel"
     data-resource-autorefresh
     data-resource-fragment-url="{{ resource_fragment_url }}"
     data-resource-signature="{{ resource_signature }}"
     data-resource-poll-ms="{{ resource_poll_ms }}"
 >
-    <div class="section-heading">
-        <div>
-            <h2>保存したURL一覧</h2>
-            <p class="section-subtitle">{{ resource_count }} 件中 {{ resource_start }} - {{ resource_end }} 件を表示しています。</p>
+    <div class="section-heading section-heading--list">
+        <div class="section-heading__title">
+            <span class="section-heading__icon" aria-hidden="true"></span>
+            <div>
+                <h2>保存したURL一覧</h2>
+                <p class="section-subtitle">{{ resource_count }} 件中 {{ resource_start }} - {{ resource_end }} 件を表示しています。</p>
+            </div>
         </div>
         <span class="live-badge" data-autorefresh-status>自動更新中</span>
     </div>
