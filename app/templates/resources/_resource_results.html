@@ -23,6 +23,7 @@
                     <tr>
                         <th>タイトル / ドメイン</th>
                         {% if table_variant == "date_focused" %}
+                            <th>興味</th>
                             <th>タグ</th>
                             <th>保存日</th>
                             <th>更新日</th>
@@ -72,9 +73,10 @@
                                         {% endif %}
                                         <div class="resource-table__actions">
                                             <a href="{{ resource.get_absolute_url }}" class="button button--soft button--compact">詳細</a>
-                                            <form method="post" action="{% url 'resources:detail' resource.id %}" onsubmit="return confirm('本当に削除しますか?');">
+                                            <form method="post" action="{% url 'resources:detail' resource.id %}" onsubmit="return confirm('本当に削除しますか?');" data-resource-action-form>
                                                 {% csrf_token %}
                                                 <input type="hidden" name="_method" value="DELETE">
+                                                <input type="hidden" name="next" value="{{ resource_action_next_url }}">
                                                 <button type="submit" class="button button--danger button--compact">削除</button>
                                             </form>
                                         </div>
@@ -82,6 +84,36 @@
                                 </div>
                             </td>
                             {% if table_variant == "date_focused" %}
+                                <td class="resource-table__cell resource-table__cell--interest" data-label="興味">
+                                    <div class="interest-toggle-group" aria-label="{{ resource.display_title }} の興味評価">
+                                        <form method="post" action="{% url 'resources:interest_feedback' resource.id %}" data-resource-action-form>
+                                            {% csrf_token %}
+                                            <input type="hidden" name="interest_feedback" value="interested">
+                                            <input type="hidden" name="next" value="{{ resource_action_next_url }}">
+                                            <button
+                                                type="submit"
+                                                class="button button--soft button--compact interest-toggle interest-toggle--interested {% if resource.interest_feedback == 'interested' %}is-active{% endif %}"
+                                                aria-pressed="{% if resource.interest_feedback == 'interested' %}true{% else %}false{% endif %}"
+                                            >
+                                                <span aria-hidden="true">✓</span>
+                                                <span>興味あり</span>
+                                            </button>
+                                        </form>
+                                        <form method="post" action="{% url 'resources:interest_feedback' resource.id %}" data-resource-action-form>
+                                            {% csrf_token %}
+                                            <input type="hidden" name="interest_feedback" value="not_interested">
+                                            <input type="hidden" name="next" value="{{ resource_action_next_url }}">
+                                            <button
+                                                type="submit"
+                                                class="button button--soft button--compact interest-toggle interest-toggle--not-interested {% if resource.interest_feedback == 'not_interested' %}is-active{% endif %}"
+                                                aria-pressed="{% if resource.interest_feedback == 'not_interested' %}true{% else %}false{% endif %}"
+                                            >
+                                                <span aria-hidden="true">×</span>
+                                                <span>興味なし</span>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
                                 <td class="resource-table__cell resource-table__cell--tags" data-label="タグ">
                                     <div class="tag-chip-list">
                                         {% for tag in resource.tags.all %}
@@ -187,9 +219,9 @@
                     {% if item.ellipsis %}
                         <span class="pagination-ellipsis">…</span>
                     {% elif item.current %}
-                        <span class="pagination-link is-current">{{ item.number }}</span>
+                        <span class="pagination-link is-current">{{ item.label }}</span>
                     {% else %}
-                        <a href="{{ item.url }}" class="pagination-link">{{ item.number }}</a>
+                        <a href="{{ item.url }}" class="pagination-link">{{ item.label }}</a>
                     {% endif %}
                 {% endfor %}
             </div>

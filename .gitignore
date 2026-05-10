@@ -17,3 +17,12 @@ storage/auth/*
 !storage/screenshots/.gitkeep
 !storage/videos/.gitkeep
 !storage/auth/.gitkeep
+
+# generated media/check screenshots
+storage/images/
+tmp_mobile_checks/
+*.mp4
+*.mov
+*.webm
+*.avi
+*.mkv

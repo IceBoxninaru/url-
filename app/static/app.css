@@ -760,13 +760,19 @@ button:disabled {
 }
 
 .filter-grid--ai-search {
-    grid-template-columns: minmax(260px, 1fr) auto;
+    grid-template-columns: minmax(260px, 480px) max-content;
+    justify-content: start;
     align-items: end;
     gap: 12px;
 }
 
 .filter-form--ai-search .button--primary {
-    min-width: 132px;
+    justify-self: start;
+    width: auto;
+    inline-size: max-content;
+    min-width: 0;
+    min-height: 40px;
+    padding-inline: 14px;
 }
 
 .field-group {
@@ -1128,6 +1134,10 @@ input[type="checkbox"] {
     min-width: 140px;
 }
 
+.resource-table__cell--interest {
+    min-width: 170px;
+}
+
 .resource-table__cell--favorite {
     min-width: 48px;
 }
@@ -1242,8 +1252,8 @@ input[type="checkbox"] {
     font-weight: 800;
 }
 
-.resource-table--date-focused th:nth-child(3),
 .resource-table--date-focused th:nth-child(4),
+.resource-table--date-focused th:nth-child(5),
 .resource-table--date-focused td.resource-table__cell--created,
 .resource-table--date-focused td.resource-table__cell--updated {
     width: 126px;
@@ -1252,6 +1262,42 @@ input[type="checkbox"] {
 
 .resource-table--date-focused .resource-table__cell--tags {
     min-width: 180px;
+}
+
+.interest-toggle-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.interest-toggle-group form {
+    margin: 0;
+}
+
+.interest-toggle {
+    min-height: 32px;
+    padding-inline: 10px;
+    gap: 6px;
+    border-color: rgba(71, 85, 105, 0.8);
+    color: var(--muted);
+    box-shadow: none;
+}
+
+.interest-toggle.is-active {
+    font-weight: 800;
+}
+
+.interest-toggle--interested.is-active {
+    background: var(--success-soft);
+    color: var(--success);
+    border-color: rgba(74, 222, 128, 0.4);
+}
+
+.interest-toggle--not-interested.is-active {
+    background: rgba(148, 163, 184, 0.12);
+    color: #cbd5e1;
+    border-color: rgba(148, 163, 184, 0.34);
 }
 
 .resource-table--selection td:first-child,
@@ -2146,6 +2192,19 @@ input[type="checkbox"] {
     .resource-table--date-focused .resource-table__cell--tags {
         grid-column: 1 / -1;
         padding-top: 2px;
+    }
+
+    .resource-table--date-focused .resource-table__cell--interest {
+        grid-column: 1 / -1;
+    }
+
+    .resource-table--date-focused .interest-toggle-group {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .resource-table--date-focused .interest-toggle {
+        width: 100%;
     }
 
     .resource-table__cell--review,

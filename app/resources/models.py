@@ -32,6 +32,12 @@ class LinkStatus(models.TextChoices):
     ERROR = "error", "確認失敗"
 
 
+class InterestFeedback(models.TextChoices):
+    NONE = "none", "未評価"
+    INTERESTED = "interested", "興味あり"
+    NOT_INTERESTED = "not_interested", "興味なし"
+
+
 class SaveReason(models.TextChoices):
     READ_LATER = "後で読む", "後で読む"
     LIKELY_TO_DISAPPEAR = "消えそう", "消えそう"
@@ -164,6 +170,12 @@ class Resource(models.Model):
     capture_images = models.BooleanField(default=True)
     capture_videos = models.BooleanField(default=True)
     search_only = models.BooleanField(default=False, db_index=True)
+    interest_feedback = models.CharField(
+        max_length=32,
+        choices=InterestFeedback.choices,
+        default=InterestFeedback.NONE,
+        db_index=True,
+    )
     review_state = models.CharField(
         max_length=32,
         choices=ReviewState.choices,

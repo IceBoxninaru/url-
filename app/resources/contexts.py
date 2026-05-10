@@ -12,6 +12,7 @@ from resources.services import get_capture_files
 from snapshots.models import Snapshot
 
 LIST_PAGE_SIZE = 10
+AI_SEARCH_PAGE_SIZE = 15
 BULK_EDIT_PAGE_SIZE = 10
 
 
@@ -148,7 +149,19 @@ def build_pagination_items(page_obj) -> list[int | None]:
     return normalized
 
 
-def build_pagination_context(page_obj, query_params) -> dict:
+def build_date_page_labels(queryset, page_obj, *, per_page: int) -> dict[int, str]:
+    labels: dict[int, str] = {}
+    for number in build_pagination_items(page_obj):
+        if number is None:
+            continue
+        offset = (number - 1) * per_page
+        created_at = queryset.values_list("created_at", flat=True)[offset : offset + 1].first()
+        if created_at:
+            labels[number] = timezone.localtime(created_at).strftime("%Y/%m/%d")
+    return labels
+
+
+def build_pagination_context(page_obj, query_params, *, page_labels: dict[int, str] | None = None) -> dict:
     params = query_params.copy()
     if "page" in params:
         del params["page"]
@@ -166,6 +179,7 @@ def build_pagination_context(page_obj, query_params) -> dict:
         items.append(
             {
                 "number": number,
+                "label": (page_labels or {}).get(number, str(number)),
                 "current": number == page_obj.number,
                 "url": build_url(number),
             }
@@ -177,6 +191,17 @@ def build_pagination_context(page_obj, query_params) -> dict:
         "prev_url": build_url(page_obj.previous_page_number()) if page_obj.has_previous() else "",
         "next_url": build_url(page_obj.next_page_number()) if page_obj.has_next() else "",
     }
+
+
+def build_resource_action_next_url(request, clear_url_name: str) -> str:
+    params = request.GET.copy()
+    if "_ts" in params:
+        del params["_ts"]
+    query_string = params.urlencode()
+    base_url = reverse(clear_url_name)
+    if query_string:
+        return f"{base_url}?{query_string}"
+    return base_url
 
 
 def build_resource_list_signature(resources) -> str:
@@ -193,6 +218,7 @@ def build_resource_list_signature(resources) -> str:
             f"{resource.is_recheck_due}:"
             f"{resource.latest_snapshot_id or 0}:"
             f"{resource.search_only}:"
+            f"{resource.interest_feedback}:"
             f"{resource.latest_translation}"
         )
         for resource in resources
@@ -207,6 +233,8 @@ def build_resource_list_context(
     date_ordered: bool = False,
     filter_variant: str = "full",
     table_variant: str = "standard",
+    page_size: int = LIST_PAGE_SIZE,
+    date_page_labels: bool = False,
     fragment_url_name: str = "resources:list_fragment",
     clear_url_name: str = "resources:list",
     page_title: str = "保存したURL一覧",
@@ -239,8 +267,9 @@ def build_resource_list_context(
     if date_ordered:
         resources = resources.order_by("-created_at", "-id")
 
-    page_obj = paginate_queryset(resources, request.GET.get("page"), per_page=LIST_PAGE_SIZE)
+    page_obj = paginate_queryset(resources, request.GET.get("page"), per_page=page_size)
     resource_list = list(page_obj.object_list)
+    page_labels = build_date_page_labels(resources, page_obj, per_page=page_size) if date_page_labels else None
     return {
         "page_title": page_title,
         "page_subtitle": page_subtitle,
@@ -253,8 +282,9 @@ def build_resource_list_context(
         "list_clear_url": reverse(clear_url_name),
         "filter_form": filter_form,
         "resources": resource_list,
+        "resource_action_next_url": build_resource_action_next_url(request, clear_url_name),
         "page_obj": page_obj,
-        "pagination": build_pagination_context(page_obj, request.GET),
+        "pagination": build_pagination_context(page_obj, request.GET, page_labels=page_labels),
         "resource_count": page_obj.paginator.count,
         "resource_start": page_obj.start_index() if page_obj.paginator.count else 0,
         "resource_end": page_obj.end_index() if page_obj.paginator.count else 0,
@@ -271,6 +301,8 @@ def build_ai_search_resource_list_context(request) -> dict:
         date_ordered=True,
         filter_variant="ai_search",
         table_variant="date_focused",
+        page_size=AI_SEARCH_PAGE_SIZE,
+        date_page_labels=True,
         fragment_url_name="resources:ai_search_list_fragment",
         clear_url_name="resources:ai_search_list",
         page_title="AI検索URL",

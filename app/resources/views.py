@@ -4,7 +4,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_GET, require_http_methods
+from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from resources.contexts import (
     BULK_EDIT_PAGE_SIZE,
@@ -16,7 +16,7 @@ from resources.contexts import (
     paginate_queryset,
 )
 from resources.forms import ResourceBulkEditForm, ResourceForm
-from resources.models import Resource
+from resources.models import InterestFeedback, Resource
 from resources.services import (
     check_resource_link_status,
     delete_resource_with_artifacts,
@@ -32,6 +32,11 @@ def normalize_next_url(raw_next: str) -> str:
     if not next_url.startswith("/"):
         return reverse("resources:list")
     return next_url
+
+
+def wants_json_response(request) -> bool:
+    requested_with = request.headers.get("x-requested-with", "").lower()
+    return requested_with in {"fetch", "xmlhttprequest"}
 
 
 def parse_resource_ids(raw_ids) -> list[int]:
@@ -188,6 +193,8 @@ def serialize_resource(resource: Resource, *, detail: bool = False) -> dict:
         "domain": resource.domain,
         "favorite": resource.favorite,
         "search_only": resource.search_only,
+        "interest_feedback": resource.interest_feedback,
+        "interest_feedback_label": resource.get_interest_feedback_display(),
         "save_reason": resource.save_reason,
         "save_reason_label": resource.get_save_reason_display(),
         "next_action": resource.next_action,
@@ -306,6 +313,25 @@ def ai_search_resource_list_fragment(request):
     )
 
 
+@require_POST
+def resource_interest_feedback(request, pk: int):
+    resource = get_object_or_404(Resource, pk=pk)
+    next_url = normalize_next_url(request.POST.get("next", ""))
+    feedback = request.POST.get("interest_feedback", InterestFeedback.NONE)
+    valid_feedback = {InterestFeedback.INTERESTED, InterestFeedback.NOT_INTERESTED, InterestFeedback.NONE}
+    if feedback not in valid_feedback:
+        if wants_json_response(request):
+            return JsonResponse({"ok": False, "error": "Invalid interest feedback."}, status=400)
+        messages.error(request, "興味評価の更新に失敗しました。")
+        return redirect(next_url)
+
+    resource.interest_feedback = InterestFeedback.NONE if resource.interest_feedback == feedback else feedback
+    resource.save(update_fields=["interest_feedback", "updated_at"])
+    if wants_json_response(request):
+        return JsonResponse({"ok": True, "resource": serialize_resource(resource)})
+    return redirect(next_url)
+
+
 @ensure_csrf_cookie
 @require_http_methods(["GET", "POST"])
 def resource_create(request):
@@ -409,9 +435,13 @@ def resource_detail(request, pk: int):
         return render(request, "resources/edit.html", {"resource": resource, "form": form}, status=400)
 
     if method == "DELETE":
+        next_url = normalize_next_url(request.POST.get("next", ""))
+        deleted_id = resource.pk
         delete_resource_with_artifacts(resource)
+        if wants_json_response(request):
+            return JsonResponse({"ok": True, "deleted_id": deleted_id})
         messages.success(request, "URLと関連する画像・動画を含む保存ファイルをすぐに削除しました。")
-        return redirect("resources:list")
+        return redirect(next_url)
 
     return HttpResponseNotAllowed(["GET", "POST"])
 

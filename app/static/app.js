@@ -10,6 +10,7 @@ function initResourceAutoRefresh() {
   let signature = panel.dataset.resourceSignature || "";
   const pollMs = Number(panel.dataset.resourcePollMs || 10000);
   let inFlight = false;
+  let actionInFlight = false;
 
   const setStatus = (message) => {
     const currentPanel = getPanel();
@@ -79,6 +80,52 @@ function initResourceAutoRefresh() {
       inFlight = false;
     }
   };
+
+  document.addEventListener("submit", async (event) => {
+    if (event.defaultPrevented) {
+      return;
+    }
+
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.matches("[data-resource-action-form]")) {
+      return;
+    }
+    if (!form.closest(selector)) {
+      return;
+    }
+
+    event.preventDefault();
+    if (actionInFlight) {
+      return;
+    }
+
+    const submitButtons = Array.from(form.querySelectorAll("button[type='submit']"));
+    actionInFlight = true;
+    submitButtons.forEach((button) => {
+      button.disabled = true;
+    });
+    setStatus("更新中...");
+
+    try {
+      const response = await fetch(form.action, {
+        method: form.method || "POST",
+        body: new FormData(form),
+        headers: { "X-Requested-With": "fetch" },
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      await refreshList(true);
+    } catch (_error) {
+      setStatus("更新失敗");
+    } finally {
+      actionInFlight = false;
+      submitButtons.forEach((button) => {
+        button.disabled = false;
+      });
+    }
+  });
 
   window.setInterval(() => {
     refreshList(false);

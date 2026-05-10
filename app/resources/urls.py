@@ -17,6 +17,7 @@ urlpatterns = [
     path("resources/new/", views.resource_create, name="create"),
     path("settings/", views.resource_settings, name="settings"),
     path("resources/<int:pk>/edit/", views.resource_edit, name="edit"),
+    path("resources/<int:pk>/interest/", views.resource_interest_feedback, name="interest_feedback"),
     path("resources/<int:pk>/", views.resource_detail, name="detail"),
     path("resources/<int:pk>/capture/", views.resource_capture, name="capture"),
     path("resources/<int:pk>/snapshots/", views.resource_snapshots, name="snapshots"),

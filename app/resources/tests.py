@@ -17,7 +17,7 @@ from django.utils import timezone
 from jobs.models import CaptureJob, JobStatus, JobType
 from jobs.services import run_one_job
 from resources.forms import NOTE_TEMPLATE_CHOICES, SAVE_REASON_CUSTOM_VALUE
-from resources.models import LinkStatus, Resource, ResourceStatus, ReviewState
+from resources.models import InterestFeedback, LinkStatus, Resource, ResourceStatus, ReviewState
 from resources.services import (
     CaptureResult,
     CapturedImage,
@@ -821,6 +821,9 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertContains(response, "AI検索URL")
         self.assertContains(response, "AI Found Entry")
         self.assertContains(response, "保存日")
+        self.assertContains(response, "興味あり")
+        self.assertContains(response, "興味なし")
+        self.assertContains(response, reverse("resources:interest_feedback", args=[ai_resource.id]))
         self.assertNotContains(response, "Visible Entry")
         self.assertNotContains(response, 'name="domain"', html=False)
         self.assertNotContains(response, 'name="status"', html=False)
@@ -870,6 +873,37 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(list(response.context["resources"]), [newer_resource, older_resource])
 
+    def test_ai_search_list_is_paginated_fifteen_per_date_labeled_page(self):
+        today = timezone.localtime(timezone.now())
+        yesterday = today - timezone.timedelta(days=1)
+        for index in range(15):
+            Resource.objects.create(
+                original_url=f"https://example.com/today-ai-{index}",
+                normalized_url=f"https://example.com/today-ai-{index}",
+                domain="example.com",
+                title_manual=f"Today AI {index}",
+                search_only=True,
+            )
+        older_resource = Resource.objects.create(
+            original_url="https://example.com/yesterday-ai",
+            normalized_url="https://example.com/yesterday-ai",
+            domain="example.com",
+            title_manual="Yesterday AI",
+            search_only=True,
+        )
+        Resource.objects.filter(pk=older_resource.pk).update(created_at=yesterday)
+
+        response = self.client.get(reverse("resources:ai_search_list"))
+        second_page = self.client.get(reverse("resources:ai_search_list"), {"page": 2})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["resources"]), 15)
+        self.assertTrue(response.context["pagination"]["is_paginated"])
+        self.assertContains(response, today.strftime("%Y/%m/%d"))
+        self.assertContains(response, yesterday.strftime("%Y/%m/%d"))
+        self.assertEqual(second_page.status_code, 200)
+        self.assertEqual(list(second_page.context["resources"]), [older_resource])
+
     def test_ai_search_list_fragment_returns_search_only_html(self):
         ai_resource = Resource.objects.create(
             original_url="https://example.com/live-ai",
@@ -894,6 +928,140 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertIn(str(ai_resource.id), payload["html"])
         self.assertNotIn("Live Normal Entry", payload["html"])
         self.assertTrue(payload["signature"])
+
+    def test_ai_search_list_fragment_action_next_points_to_page_not_live_endpoint(self):
+        Resource.objects.create(
+            original_url="https://example.com/live-next-ai",
+            normalized_url="https://example.com/live-next-ai",
+            domain="example.com",
+            title_manual="Live Next AI Entry",
+            search_only=True,
+        )
+
+        response = self.client.get(reverse("resources:ai_search_list_fragment"), {"page": 2, "_ts": "123"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn('name="next" value="/ai-search/resources/?page=2"', payload["html"])
+        self.assertNotIn('name="next" value="/ai-search/resources/live/', payload["html"])
+
+    def test_import_may10_ai_urls_disables_video_capture(self):
+        output = StringIO()
+
+        call_command("import_may10_ai_urls", "--no-jobs", stdout=output)
+
+        self.assertEqual(Resource.objects.filter(search_only=True).count(), 15)
+        self.assertFalse(Resource.objects.filter(search_only=True, capture_videos=True).exists())
+
+    def test_interest_feedback_marks_ai_search_resource_as_interested(self):
+        ai_resource = Resource.objects.create(
+            original_url="https://example.com/interest-ai",
+            normalized_url="https://example.com/interest-ai",
+            domain="example.com",
+            title_manual="Interest AI Entry",
+            search_only=True,
+        )
+
+        response = self.client.post(
+            reverse("resources:interest_feedback", args=[ai_resource.id]),
+            {
+                "interest_feedback": InterestFeedback.INTERESTED,
+                "next": reverse("resources:ai_search_list"),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], reverse("resources:ai_search_list"))
+        ai_resource.refresh_from_db()
+        self.assertEqual(ai_resource.interest_feedback, InterestFeedback.INTERESTED)
+
+    def test_interest_feedback_fetch_returns_json_without_redirect(self):
+        ai_resource = Resource.objects.create(
+            original_url="https://example.com/interest-fetch-ai",
+            normalized_url="https://example.com/interest-fetch-ai",
+            domain="example.com",
+            title_manual="Interest Fetch AI Entry",
+            search_only=True,
+        )
+
+        response = self.client.post(
+            reverse("resources:interest_feedback", args=[ai_resource.id]),
+            {
+                "interest_feedback": InterestFeedback.INTERESTED,
+                "next": reverse("resources:ai_search_list"),
+            },
+            HTTP_X_REQUESTED_WITH="fetch",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["resource"]["interest_feedback"], InterestFeedback.INTERESTED)
+        ai_resource.refresh_from_db()
+        self.assertEqual(ai_resource.interest_feedback, InterestFeedback.INTERESTED)
+
+    def test_interest_feedback_toggles_same_value_back_to_none(self):
+        ai_resource = Resource.objects.create(
+            original_url="https://example.com/not-interest-ai",
+            normalized_url="https://example.com/not-interest-ai",
+            domain="example.com",
+            title_manual="Not Interest AI Entry",
+            search_only=True,
+            interest_feedback=InterestFeedback.NOT_INTERESTED,
+        )
+
+        response = self.client.post(
+            reverse("resources:interest_feedback", args=[ai_resource.id]),
+            {
+                "interest_feedback": InterestFeedback.NOT_INTERESTED,
+                "next": reverse("resources:ai_search_list"),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        ai_resource.refresh_from_db()
+        self.assertEqual(ai_resource.interest_feedback, InterestFeedback.NONE)
+
+    def test_api_resource_detail_includes_interest_feedback(self):
+        ai_resource = Resource.objects.create(
+            original_url="https://example.com/interested-api",
+            normalized_url="https://example.com/interested-api",
+            domain="example.com",
+            title_manual="Interested API Entry",
+            search_only=True,
+            interest_feedback=InterestFeedback.INTERESTED,
+        )
+
+        response = self.client.get(reverse("resources:api_detail", args=[ai_resource.id]))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["interest_feedback"], InterestFeedback.INTERESTED)
+        self.assertEqual(payload["interest_feedback_label"], "興味あり")
+
+    def test_delete_fetch_returns_json_without_redirect(self):
+        ai_resource = Resource.objects.create(
+            original_url="https://example.com/delete-fetch-ai",
+            normalized_url="https://example.com/delete-fetch-ai",
+            domain="example.com",
+            title_manual="Delete Fetch AI Entry",
+            search_only=True,
+        )
+
+        response = self.client.post(
+            reverse("resources:detail", args=[ai_resource.id]),
+            {
+                "_method": "DELETE",
+                "next": reverse("resources:ai_search_list"),
+            },
+            HTTP_X_REQUESTED_WITH="fetch",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["deleted_id"], ai_resource.id)
+        self.assertFalse(Resource.objects.filter(pk=ai_resource.pk).exists())
 
     def test_list_shows_link_to_create_page(self):
         response = self.client.get(reverse("resources:list"))
@@ -1618,6 +1786,32 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             self.resource.normalized_url,
             capture_images=False,
             capture_videos=True,
+            page_domain=self.resource.domain,
+        )
+
+    def test_choose_capture_result_skips_video_capture_for_search_only_resources(self):
+        self.resource.capture_images = False
+        self.resource.capture_videos = True
+        self.resource.search_only = True
+        self.resource.save(update_fields=["capture_images", "capture_videos", "search_only"])
+
+        http_result = CaptureResult(
+            fetch_url=self.resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            html="<html><video src='https://cdn.example.com/sample.mp4'></video></html>",
+            extracted_text="body",
+        )
+
+        with patch("resources.services.fetch_with_http", return_value=http_result) as mocked_http:
+            with patch("resources.services.should_use_playwright", return_value=False):
+                result = choose_capture_result(self.resource)
+
+        self.assertEqual(result, http_result)
+        mocked_http.assert_called_once_with(
+            self.resource.normalized_url,
+            capture_images=False,
+            capture_videos=False,
             page_domain=self.resource.domain,
         )
 
