@@ -7,7 +7,7 @@
 >
     <div class="section-heading section-heading--list">
         <div class="section-heading__title">
-            <span class="section-heading__icon" aria-hidden="true"></span>
+            <span class="section-heading__icon" aria-hidden="true">{% include "_icon.html" with name="table" only %}</span>
             <div>
                 <h2>保存したURL一覧</h2>
                 <p class="section-subtitle">{{ resource_count }} 件中 {{ resource_start }} - {{ resource_end }} 件を表示しています。</p>
@@ -29,7 +29,10 @@
                         <th>次の行動</th>
                         <th>再確認日</th>
                         <th>タグ</th>
-                        <th>☆</th>
+                        <th>
+                            <span class="table-head-icon" aria-hidden="true">{% include "_icon.html" with name="star" only %}</span>
+                            <span class="sr-only">お気に入り</span>
+                        </th>
                         <th>最終更新</th>
                     </tr>
                 </thead>
@@ -37,13 +40,15 @@
                     {% for resource in resources %}
                         <tr>
                             <td data-label="タイトル">
-                                <div class="resource-table__identity {% if not resource.latest_screenshot_path %}resource-table__identity--no-thumb{% endif %}">
+                                <div class="resource-table__identity">
                                     {% if resource.latest_screenshot_path %}
                                         <img
                                             src="/{{ resource.latest_screenshot_path }}"
                                             alt="{{ resource.display_title }}"
                                             class="resource-table__thumb"
                                         >
+                                    {% else %}
+                                        <span class="resource-table__thumb resource-table__thumb--placeholder" aria-hidden="true"></span>
                                     {% endif %}
                                     <div>
                                         <a href="{{ resource.get_absolute_url }}" class="resource-table__title">{{ resource.display_title }}</a>
@@ -115,7 +120,11 @@
                                 </div>
                             </td>
                             <td class="resource-table__cell resource-table__cell--favorite resource-table__star" data-label="お気に入り">
-                                {% if resource.favorite %}★{% else %}☆{% endif %}
+                                {% if resource.favorite %}
+                                    {% include "_icon.html" with name="star-filled" only %}
+                                {% else %}
+                                    {% include "_icon.html" with name="star" only %}
+                                {% endif %}
                             </td>
                             <td class="resource-table__cell resource-table__cell--updated" data-label="更新">
                                 <p>{{ resource.updated_at|date:"Y/m/d" }}</p>

@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <title>{% block title %}URL Archive{% endblock %}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="{% static 'app.css' %}">
+    <link rel="stylesheet" href="{% static 'app.css' %}?v=title-font-2">
     <script src="{% static 'app.js' %}" defer></script>
 </head>
 <body>
@@ -14,8 +14,7 @@
         <aside class="app-sidebar">
             <a href="{% url 'resources:dashboard' %}" class="app-brand">
                 <span class="app-brand__mark" aria-hidden="true">
-                    <span></span>
-                    <span></span>
+                    {% include "_icon.html" with name="brand" only %}
                 </span>
                 <div>
                     <strong>URL Archive</strong>
@@ -27,42 +26,35 @@
                     href="{% url 'resources:dashboard' %}"
                     class="app-nav__link {% if namespace == 'resources' and url_name == 'dashboard' %}is-active{% endif %}"
                 >
-                    <span class="app-nav__icon" aria-hidden="true">◈</span>
+                    <span class="app-nav__icon" aria-hidden="true">{% include "_icon.html" with name="dashboard" only %}</span>
                     <span>概要</span>
                 </a>
                 <a
                     href="{% url 'resources:list' %}"
                     class="app-nav__link {% if namespace == 'resources' and url_name == 'list' or namespace == 'resources' and url_name == 'list_fragment' or namespace == 'resources' and url_name == 'detail' %}is-active{% endif %}"
                 >
-                    <span class="app-nav__icon" aria-hidden="true">≣</span>
+                    <span class="app-nav__icon" aria-hidden="true">{% include "_icon.html" with name="list" only %}</span>
                     <span>一覧</span>
                 </a>
                 <a
                     href="{% url 'resources:create' %}"
                     class="app-nav__link {% if namespace == 'resources' and url_name == 'create' %}is-active{% endif %}"
                 >
-                    <span class="app-nav__icon" aria-hidden="true">⊕</span>
+                    <span class="app-nav__icon" aria-hidden="true">{% include "_icon.html" with name="create" only %}</span>
                     <span>URL登録</span>
                 </a>
                 <a
                     href="{% url 'resources:bulk_edit' %}"
                     class="app-nav__link {% if namespace == 'resources' and url_name == 'bulk_edit' %}is-active{% endif %}"
                 >
-                    <span class="app-nav__icon" aria-hidden="true">⊞</span>
+                    <span class="app-nav__icon" aria-hidden="true">{% include "_icon.html" with name="bulk" only %}</span>
                     <span>一括編集</span>
-                </a>
-                <a
-                    href="{% url 'snapshots:list' %}"
-                    class="app-nav__link {% if namespace == 'snapshots' %}is-active{% endif %}"
-                >
-                    <span class="app-nav__icon" aria-hidden="true">◫</span>
-                    <span>スナップショット</span>
                 </a>
                 <a
                     href="{% url 'resources:settings' %}"
                     class="app-nav__link {% if namespace == 'resources' and url_name == 'settings' or namespace == 'tags' or namespace == 'jobs' %}is-active{% endif %}"
                 >
-                    <span class="app-nav__icon" aria-hidden="true">⚙</span>
+                    <span class="app-nav__icon" aria-hidden="true">{% include "_icon.html" with name="settings" only %}</span>
                     <span>設定</span>
                 </a>
             </nav>
@@ -71,7 +63,7 @@
         <div class="app-main">
             <header class="app-topbar">
                 <form method="get" action="{% url 'resources:list' %}" class="top-search">
-                    <span class="top-search__icon" aria-hidden="true">⌕</span>
+                    <span class="top-search__icon" aria-hidden="true">{% include "_icon.html" with name="search" only %}</span>
                     <input
                         type="text"
                         name="q"
@@ -79,7 +71,6 @@
                         placeholder="URLやタイトル、ドメイン、タグで検索..."
                         aria-label="URLやタイトル、ドメイン、タグで検索"
                     >
-                    <span class="top-search__shortcut">⌘ K</span>
                 </form>
             </header>
 

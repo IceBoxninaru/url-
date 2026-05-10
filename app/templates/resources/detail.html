@@ -34,6 +34,7 @@
         </div>
 
         <div class="page-actions">
+            <a href="{% url 'resources:edit' resource.id %}" class="button button--primary">編集</a>
             <form method="post" action="{% url 'resources:capture' resource.id %}">
                 {% csrf_token %}
                 <button type="submit" class="button button--ghost">再取得</button>
@@ -43,7 +44,6 @@
                 <input type="hidden" name="_method" value="LINK_CHECK">
                 <button type="submit" class="button button--ghost">リンク確認</button>
             </form>
-            <a href="#resource-edit" class="button button--ghost">更新</a>
             <form method="post" action="{% url 'resources:detail' resource.id %}" onsubmit="return confirm('本当に削除しますか?');">
                 {% csrf_token %}
                 <input type="hidden" name="_method" value="DELETE">
@@ -265,28 +265,5 @@
         </div>
     </section>
 
-    <section class="panel" id="resource-edit">
-        <div class="section-heading">
-            <div>
-                <h2>編集</h2>
-                <p class="section-subtitle">URL情報をその場で更新できます。</p>
-            </div>
-        </div>
-
-        {% if form.non_field_errors %}
-            <div class="form-errors">
-                {{ form.non_field_errors }}
-            </div>
-        {% endif %}
-
-        <form method="post" action="{% url 'resources:detail' resource.id %}" class="form-stack">
-            {% csrf_token %}
-            <input type="hidden" name="_method" value="PATCH">
-            {{ form.as_p }}
-            <div class="form-actions">
-                <button type="submit" class="button button--primary">更新する</button>
-            </div>
-        </form>
-    </section>
 </div>
 {% endblock %}

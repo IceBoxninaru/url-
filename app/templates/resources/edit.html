@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}編集 | {{ resource.display_title }}{% endblock %}
+
+{% block content %}
+<div class="workspace-stack">
+    <nav class="breadcrumbs" aria-label="breadcrumb">
+        <a href="{% url 'resources:list' %}">一覧</a>
+        <span>/</span>
+        <a href="{{ resource.get_absolute_url }}">URL詳細</a>
+        <span>/</span>
+        <span>編集</span>
+    </nav>
+
+    <section class="page-header">
+        <div>
+            <h1>URLを編集</h1>
+            <p class="page-subtitle">{{ resource.display_title }}</p>
+        </div>
+    </section>
+
+    <section class="panel">
+        {% if form.non_field_errors %}
+            <div class="form-errors">
+                {{ form.non_field_errors }}
+            </div>
+        {% endif %}
+
+        <form method="post" action="{% url 'resources:edit' resource.id %}" class="form-stack">
+            {% csrf_token %}
+
+            <div class="form-grid">
+                <label class="field-group field-group--full">
+                    <span class="field-label">{{ form.original_url.label }} <span class="required-dot">*</span></span>
+                    {{ form.original_url }}
+                    {% if form.original_url.help_text %}
+                        <span class="field-help">{{ form.original_url.help_text }}</span>
+                    {% endif %}
+                    {{ form.original_url.errors }}
+                </label>
+
+                <label class="field-group field-group--full">
+                    <span class="field-label">{{ form.title_manual.label }}</span>
+                    {{ form.title_manual }}
+                    {% if form.title_manual.help_text %}
+                        <span class="field-help">{{ form.title_manual.help_text }}</span>
+                    {% endif %}
+                    {{ form.title_manual.errors }}
+                </label>
+
+                <label class="field-group">
+                    <span class="field-label">{{ form.save_reason.label }}</span>
+                    {{ form.save_reason }}
+                    {% if form.save_reason.help_text %}
+                        <span class="field-help">{{ form.save_reason.help_text }}</span>
+                    {% endif %}
+                    {{ form.save_reason.errors }}
+                </label>
+
+                <label
+                    class="field-group save-reason-custom-field {% if form.save_reason.value != '__custom__' %}is-hidden{% endif %}"
+                    data-save-reason-custom
+                >
+                    <span class="field-label">追加する保存理由</span>
+                    <input
+                        type="text"
+                        name="custom_save_reason"
+                        value="{{ form.data.custom_save_reason|default:'' }}"
+                        maxlength="40"
+                        placeholder="例: 授業メモ / 比較候補 / 参考資料"
+                    >
+                    <span class="field-help">新しい理由を入力すると、今回の保存理由として使えます。</span>
+                </label>
+
+                <label class="field-group">
+                    <span class="field-label">{{ form.next_action.label }}</span>
+                    {{ form.next_action }}
+                    {% if form.next_action.help_text %}
+                        <span class="field-help">{{ form.next_action.help_text }}</span>
+                    {% endif %}
+                    {{ form.next_action.errors }}
+                </label>
+
+                <label class="field-group">
+                    <span class="field-label">{{ form.recheck_at.label }}</span>
+                    {{ form.recheck_at }}
+                    {% if form.recheck_at.help_text %}
+                        <span class="field-help">{{ form.recheck_at.help_text }}</span>
+                    {% endif %}
+                    {{ form.recheck_at.errors }}
+                </label>
+
+                <label class="field-group">
+                    <span class="field-label">{{ form.review_state.label }}</span>
+                    {{ form.review_state }}
+                    {% if form.review_state.help_text %}
+                        <span class="field-help">{{ form.review_state.help_text }}</span>
+                    {% endif %}
+                    {{ form.review_state.errors }}
+                </label>
+
+                <label class="field-group field-group--full">
+                    <span class="field-label">{{ form.note.label }}</span>
+                    {{ form.note }}
+                    {% if form.note.help_text %}
+                        <span class="field-help">{{ form.note.help_text }}</span>
+                    {% endif %}
+                    {{ form.note.errors }}
+                </label>
+
+                <div class="field-group field-group--full">
+                    <span class="field-label">{{ form.tags.label }}</span>
+                    <div class="tag-selector-grid">
+                        {{ form.tags }}
+                    </div>
+                    {{ form.tags.errors }}
+                </div>
+
+                <label class="field-group field-group--full">
+                    <span class="field-label">{{ form.new_tags.label }}</span>
+                    {{ form.new_tags }}
+                    {% if form.new_tags.help_text %}
+                        <span class="field-help">{{ form.new_tags.help_text }}</span>
+                    {% endif %}
+                    {{ form.new_tags.errors }}
+                </label>
+            </div>
+
+            <div class="toggle-grid">
+                <label class="toggle-card">
+                    {{ form.favorite }}
+                    <span class="toggle-card__title">お気に入りにする</span>
+                    <span class="toggle-card__text">重要なURLとして管理します。</span>
+                </label>
+                <label class="toggle-card">
+                    {{ form.search_only }}
+                    <span class="toggle-card__title">一覧には出さず検索時のみ表示</span>
+                    <span class="toggle-card__text">通常一覧では隠し、検索結果から参照します。</span>
+                </label>
+                <label class="toggle-card">
+                    {{ form.capture_images }}
+                    <span class="toggle-card__title">画像を保存する</span>
+                    <span class="toggle-card__text">ページ内の画像ファイルも保存対象にします。</span>
+                </label>
+                <label class="toggle-card">
+                    {{ form.capture_videos }}
+                    <span class="toggle-card__title">動画を保存する</span>
+                    <span class="toggle-card__text">ページ内の動画ファイルも保存対象にします。</span>
+                </label>
+            </div>
+
+            <div class="form-actions form-actions--split">
+                <div class="form-actions__primary">
+                    <button type="submit" class="button button--primary">保存する</button>
+                </div>
+                <a href="{{ resource.get_absolute_url }}" class="button button--text">キャンセル</a>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

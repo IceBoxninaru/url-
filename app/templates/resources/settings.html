@@ -25,40 +25,5 @@
         </section>
     </div>
 
-    <section class="panel">
-        <div class="section-heading">
-            <div>
-                <h2>直近のジョブ</h2>
-                <p class="section-subtitle">最近更新されたジョブを表示しています。</p>
-            </div>
-        </div>
-
-        <table class="data-table job-table">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>対象</th>
-                    <th>状態</th>
-                    <th>種類</th>
-                    <th>更新日時</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for job in jobs %}
-                    <tr>
-                        <td data-label="ID">{{ job.id }}</td>
-                        <td data-label="対象"><a href="{{ job.resource.get_absolute_url }}">{{ job.resource.display_title }}</a></td>
-                        <td data-label="状態">{{ job.get_status_display }}</td>
-                        <td data-label="種類">{{ job.get_job_type_display }}</td>
-                        <td data-label="更新日時">{{ job.updated_at|date:"Y/m/d H:i" }}</td>
-                    </tr>
-                {% empty %}
-                    <tr>
-                        <td colspan="5">ジョブはまだありません。</td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </section>
 </div>
 {% endblock %}

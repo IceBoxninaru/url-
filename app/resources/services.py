@@ -67,6 +67,8 @@ ENCODED_MEDIA_URL_PATTERN = re.compile(r"https?%3a%2f%2f[^\"'<>\s]+", re.IGNOREC
 TRANSLATION_MAX_SOURCE_CHARS = 1600
 TRANSLATION_MAX_CHUNK_CHARS = 400
 TRANSLATION_ENDPOINT = "https://translate.googleapis.com/translate_a/single"
+LOCAL_LLM_PROVIDERS = {"openclaw", "local_llm", "openai_compatible", "ollama"}
+LOCAL_LLM_CATEGORIES = {"general", "social", "shopping", "documentation", "news", "video"}
 
 
 @dataclass
@@ -97,9 +99,10 @@ class CaptureResult:
 
 @dataclass
 class AIResult:
-    translation: str
-    category: str
-    payload: dict
+    translation: str = ""
+    category: str = ""
+    summary: str = ""
+    payload: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -3191,6 +3194,182 @@ def similar_resource_ids(resource: Resource) -> list[int]:
     return list(queryset.order_by("-updated_at").values_list("id", flat=True)[:5])
 
 
+def build_ai_source_text(snapshot: Snapshot) -> str:
+    parts = [
+        f"URL: {snapshot.fetch_url}",
+        f"Title: {snapshot.page_title}",
+        f"Site: {snapshot.site_name}",
+        f"Description: {snapshot.og_description}",
+        f"Text: {snapshot.extracted_text}",
+    ]
+    source = "\n".join(part for part in parts if part.split(": ", 1)[-1].strip())
+    max_chars = getattr(settings, "AI_MAX_INPUT_CHARS", 12000)
+    return source[:max_chars].strip()
+
+
+def build_local_llm_messages(snapshot: Snapshot) -> list[dict]:
+    summary_limit = getattr(settings, "AI_SUMMARY_MAX_CHARS", 320)
+    source_text = build_ai_source_text(snapshot)
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a URL archive assistant. Analyze saved web page content and return only valid JSON. "
+                "Do not wrap the JSON in markdown. summary must be Japanese. "
+                "translation must be Japanese when the source text is not Japanese. "
+                "Never copy English source text into translation."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                "次の保存済みページを整理してください。\n"
+                f"- summary: 日本語で{summary_limit}文字以内の要約\n"
+                "- translation: 元本文が日本語以外なら自然な日本語訳。英語原文をそのまま返さない。元本文が日本語なら空文字\n"
+                "- category: general, social, shopping, documentation, news, video のどれか\n"
+                "- tag_candidates: 1から5個の短いタグ候補\n\n"
+                "Example output:\n"
+                "{\"summary\":\"記事の要点です。\",\"translation\":\"これは日本語訳です。\","
+                "\"category\":\"documentation\",\"tag_candidates\":[\"AI\",\"資料\"]}\n\n"
+                "JSON schema:\n"
+                "{"
+                "\"summary\":\"...\","
+                "\"translation\":\"...\","
+                "\"category\":\"general\","
+                "\"tag_candidates\":[\"tag\"]"
+                "}\n\n"
+                f"{source_text}"
+            ),
+        },
+    ]
+
+
+def local_llm_chat_completion_url() -> str:
+    base_url = getattr(settings, "AI_API_BASE", "").strip().rstrip("/")
+    if not base_url:
+        raise ValueError("AI_API_BASE is required for local LLM providers.")
+    if base_url.endswith("/chat/completions"):
+        return base_url
+    return f"{base_url}/chat/completions"
+
+
+def local_llm_chat(messages: list[dict]) -> str:
+    model = getattr(settings, "AI_MODEL", "").strip()
+    if not model:
+        raise ValueError("AI_MODEL is required for local LLM providers.")
+
+    headers = {"Content-Type": "application/json"}
+    api_key = getattr(settings, "AI_API_KEY", "").strip()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    with httpx.Client(
+        timeout=getattr(settings, "AI_REQUEST_TIMEOUT", 90),
+        headers=headers,
+    ) as client:
+        response = client.post(
+            local_llm_chat_completion_url(),
+            json={
+                "model": model,
+                "messages": messages,
+                "temperature": getattr(settings, "AI_TEMPERATURE", 0.2),
+                "max_tokens": getattr(settings, "AI_MAX_OUTPUT_TOKENS", 1200),
+                "stream": False,
+            },
+        )
+    response.raise_for_status()
+    payload = response.json()
+    choices = payload.get("choices") or []
+    if not choices:
+        raise ValueError("Local LLM response did not include choices.")
+
+    content = (choices[0].get("message") or {}).get("content", "")
+    if isinstance(content, list):
+        content = "".join(
+            item.get("text", "") if isinstance(item, dict) else str(item)
+            for item in content
+        )
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("Local LLM response did not include message content.")
+    return content.strip()
+
+
+def parse_local_llm_json(content: str) -> dict:
+    cleaned = content.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise
+        return json.loads(cleaned[start : end + 1])
+
+
+def normalize_local_llm_tags(raw_tags) -> list[str]:
+    tags: list[str] = []
+    if not isinstance(raw_tags, list):
+        return tags
+    for raw_tag in raw_tags:
+        tag = normalize_ai_text(str(raw_tag)).strip(" #、,")
+        if not tag or tag in tags:
+            continue
+        tags.append(tag[:40])
+        if len(tags) == 5:
+            break
+    return tags
+
+
+def truncate_ai_output(value: str, *, limit: int) -> str:
+    text = normalize_ai_text(value)
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit].rstrip()}..."
+
+
+def run_local_llm_pipeline(snapshot: Snapshot, base_payload: dict) -> AIResult:
+    content = local_llm_chat(build_local_llm_messages(snapshot))
+    parsed = parse_local_llm_json(content)
+    heuristic_tags = base_payload.get("tag_candidates", [])
+    tag_candidates = normalize_local_llm_tags(parsed.get("tag_candidates")) or heuristic_tags
+
+    category = normalize_ai_text(str(parsed.get("category", ""))).lower()
+    if category not in LOCAL_LLM_CATEGORIES:
+        category = infer_category(snapshot)
+
+    source_is_japanese = is_probably_japanese_text(build_translation_source_text(snapshot))
+    translation = "" if source_is_japanese else normalize_ai_text(str(parsed.get("translation", "")))
+    if translation and not is_probably_japanese_text(translation):
+        translation = ""
+    summary = truncate_ai_output(
+        str(parsed.get("summary", "")),
+        limit=getattr(settings, "AI_SUMMARY_MAX_CHARS", 320),
+    )
+    if source_is_japanese:
+        translation_status = "source_already_japanese"
+    elif translation:
+        translation_status = "llm_generated"
+    else:
+        translation_status = "llm_translation_unavailable"
+    return AIResult(
+        summary=summary,
+        translation=translation,
+        category=category,
+        payload={
+            **base_payload,
+            "model": getattr(settings, "AI_MODEL", ""),
+            "tag_candidates": tag_candidates,
+            "translation_status": translation_status,
+            "translation_detected_language": "ja" if source_is_japanese else "",
+            "summary_status": "llm_generated" if summary else "empty",
+        },
+    )
+
+
 def run_ai_pipeline(snapshot: Snapshot) -> AIResult:
     provider = settings.AI_PROVIDER.lower()
     base_payload = {
@@ -3208,6 +3387,9 @@ def run_ai_pipeline(snapshot: Snapshot) -> AIResult:
                 "translation_detected_language": "",
             },
         )
+
+    if provider in LOCAL_LLM_PROVIDERS:
+        return run_local_llm_pipeline(snapshot, base_payload)
 
     translation, translation_meta = translate_text_to_japanese(build_translation_source_text(snapshot))
     category = infer_category(snapshot)
@@ -3247,7 +3429,7 @@ def execute_ai_job(job: CaptureJob) -> Snapshot:
     if snapshot is None:
         raise ValueError("No snapshot available for AI enrichment.")
     ai_result = run_ai_pipeline(snapshot)
-    snapshot.ai_summary = ""
+    snapshot.ai_summary = ai_result.summary
     snapshot.ai_translation = ai_result.translation
     snapshot.ai_category = ai_result.category
     snapshot.ai_payload = ai_result.payload

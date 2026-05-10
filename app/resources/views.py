@@ -20,6 +20,7 @@ from resources.services import (
     check_resource_link_status,
     delete_resource_with_artifacts,
     enqueue_capture_job,
+    get_capture_files,
 )
 from jobs.models import CaptureJob, JobStatus
 from tags.models import Tag
@@ -87,6 +88,180 @@ def build_bulk_edit_context(
         "resource_end": page_obj.end_index() if page_obj.paginator.count else 0,
         "next_url": next_url,
     }
+
+
+def parse_api_limit(raw_limit: str | None, *, default: int = 5, maximum: int = 20) -> int:
+    try:
+        limit = int(raw_limit or default)
+    except (TypeError, ValueError):
+        limit = default
+    return max(1, min(limit, maximum))
+
+
+def isoformat_or_none(value) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def truncate_text(value: str, *, limit: int = 1000) -> str:
+    text = (value or "").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit].rstrip()}..."
+
+
+def storage_url_for_path(path: str) -> str:
+    if not path:
+        return ""
+    if path.startswith(("http://", "https://", "/")):
+        return path
+    return f"/{path}"
+
+
+def serialize_tag(tag: Tag) -> dict:
+    return {
+        "id": tag.id,
+        "name": tag.name,
+        "color": tag.color,
+    }
+
+
+def serialize_media_asset(asset: dict, media_type: str) -> dict:
+    path = str(asset.get("path", "")).strip()
+    return {
+        **asset,
+        "media_type": media_type,
+        "path": path,
+        "url": storage_url_for_path(path),
+    }
+
+
+def serialize_snapshot(snapshot, *, include_text: bool = False, include_media: bool = False) -> dict | None:
+    if snapshot is None:
+        return None
+
+    image_files, video_files = get_capture_files(snapshot)
+    image_assets = [serialize_media_asset(asset, "image") for asset in image_files]
+    video_assets = [serialize_media_asset(asset, "video") for asset in video_files]
+    payload = {
+        "id": snapshot.id,
+        "snapshot_no": snapshot.snapshot_no,
+        "fetch_url": snapshot.fetch_url,
+        "fetch_method": snapshot.fetch_method,
+        "http_status": snapshot.http_status,
+        "fetched_at": isoformat_or_none(snapshot.fetched_at),
+        "page_title": snapshot.page_title,
+        "site_name": snapshot.site_name,
+        "author": snapshot.author,
+        "published_at": isoformat_or_none(snapshot.published_at),
+        "summary": snapshot.ai_summary,
+        "translation": snapshot.ai_translation if include_text else truncate_text(snapshot.ai_translation),
+        "category": snapshot.ai_category,
+        "image_count": len(image_assets),
+        "video_count": len(video_assets),
+        "screenshot_path": snapshot.screenshot_full_path,
+        "screenshot_url": storage_url_for_path(snapshot.screenshot_full_path),
+    }
+    if include_media:
+        payload.update(
+            {
+                "image_assets": image_assets,
+                "video_assets": video_assets,
+                "media_assets": [*image_assets, *video_assets],
+            }
+        )
+    if include_text:
+        payload["extracted_text"] = snapshot.extracted_text
+    else:
+        payload["text_excerpt"] = truncate_text(snapshot.extracted_text)
+    return payload
+
+
+def serialize_resource(resource: Resource, *, detail: bool = False) -> dict:
+    payload = {
+        "id": resource.id,
+        "title": resource.display_title,
+        "url": resource.original_url,
+        "normalized_url": resource.normalized_url,
+        "domain": resource.domain,
+        "favorite": resource.favorite,
+        "search_only": resource.search_only,
+        "save_reason": resource.save_reason,
+        "save_reason_label": resource.get_save_reason_display(),
+        "next_action": resource.next_action,
+        "review_state": resource.review_state,
+        "review_state_label": resource.get_review_state_display(),
+        "current_status": resource.current_status,
+        "current_status_label": resource.get_current_status_display(),
+        "link_status": resource.link_status,
+        "link_status_label": resource.get_link_status_display(),
+        "tags": [serialize_tag(tag) for tag in resource.tags.all()],
+        "summary": resource.latest_summary,
+        "translation": resource.latest_translation if detail else truncate_text(resource.latest_translation),
+        "detail_path": resource.get_absolute_url(),
+        "created_at": isoformat_or_none(resource.created_at),
+        "updated_at": isoformat_or_none(resource.updated_at),
+        "latest_snapshot": serialize_snapshot(resource.latest_snapshot, include_text=detail, include_media=detail),
+    }
+    if detail:
+        payload.update(
+            {
+                "note": resource.note,
+                "recheck_at": isoformat_or_none(resource.recheck_at),
+                "capture_images": resource.capture_images,
+                "capture_videos": resource.capture_videos,
+                "last_link_check_at": isoformat_or_none(resource.last_link_check_at),
+                "last_link_check_http_status": resource.last_link_check_http_status,
+                "last_link_check_error": resource.last_link_check_error,
+            }
+        )
+    return payload
+
+
+@require_GET
+def api_recent_resources(request):
+    limit = parse_api_limit(request.GET.get("limit"), default=5, maximum=20)
+    queryset = (
+        Resource.objects.with_related()
+        .filter(search_only=False)
+        .order_by("-updated_at", "-id")
+    )
+    resources = list(queryset[:limit])
+    return JsonResponse(
+        {
+            "items": [serialize_resource(resource) for resource in resources],
+            "count": len(resources),
+            "limit": limit,
+        }
+    )
+
+
+@require_GET
+def api_search_resources(request):
+    query = (request.GET.get("q") or request.GET.get("query") or "").strip()
+    limit = parse_api_limit(request.GET.get("limit"), default=20, maximum=20)
+    if not query:
+        return JsonResponse({"items": [], "count": 0, "total_count": 0, "query": query, "limit": limit})
+
+    queryset = Resource.objects.apply_filters(query=query)
+    total_count = queryset.count()
+    resources = list(queryset[:limit])
+    return JsonResponse(
+        {
+            "items": [serialize_resource(resource) for resource in resources],
+            "count": len(resources),
+            "total_count": total_count,
+            "query": query,
+            "limit": limit,
+        }
+    )
+
+
+@require_GET
+def api_resource_detail(request, pk: int):
+    resource = get_object_or_404(Resource.objects.with_related(), pk=pk)
+    return JsonResponse(serialize_resource(resource, detail=True))
 
 
 @require_GET
@@ -212,7 +387,7 @@ def resource_detail(request, pk: int):
             messages.info(request, "そのURLは別の登録で使われています。")
         else:
             messages.error(request, "更新に失敗しました。")
-        return render(request, "resources/detail.html", build_resource_detail_context(resource, form), status=400)
+        return render(request, "resources/edit.html", {"resource": resource, "form": form}, status=400)
 
     if method == "DELETE":
         delete_resource_with_artifacts(resource)
@@ -220,6 +395,25 @@ def resource_detail(request, pk: int):
         return redirect("resources:list")
 
     return HttpResponseNotAllowed(["GET", "POST"])
+
+
+@ensure_csrf_cookie
+@require_http_methods(["GET", "POST"])
+def resource_edit(request, pk: int):
+    resource = get_object_or_404(Resource.objects.with_related(), pk=pk)
+    form = ResourceForm(instance=resource)
+    if request.method == "POST":
+        form = ResourceForm(request.POST, instance=resource)
+        if form.is_valid():
+            resource = form.save()
+            messages.success(request, "URL情報を更新しました。")
+            return redirect(resource)
+        if form.existing_resource is not None:
+            messages.info(request, "そのURLは別の登録で使われています。")
+        else:
+            messages.error(request, "更新に失敗しました。入力内容を確認してください。")
+
+    return render(request, "resources/edit.html", {"resource": resource, "form": form})
 
 
 @require_http_methods(["POST"])
@@ -240,7 +434,6 @@ def resource_snapshots(request, pk: int):
 
 @require_GET
 def resource_settings(request):
-    jobs = CaptureJob.objects.with_related()[:8]
     return render(
         request,
         "resources/settings.html",
@@ -250,6 +443,5 @@ def resource_settings(request):
             "queued_job_count": CaptureJob.objects.filter(
                 status__in=[JobStatus.QUEUED, JobStatus.RETRY_WAIT]
             ).count(),
-            "jobs": jobs,
         },
     )

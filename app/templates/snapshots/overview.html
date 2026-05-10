@@ -11,13 +11,11 @@
         </div>
         {% if snapshot %}
             <div class="page-actions">
-                <button type="button" class="button button--ghost" disabled>比較対象を選ぶ</button>
                 <a href="{{ active_resource.get_absolute_url }}" class="button button--ghost">この時点を表示</a>
                 <form method="post" action="{% url 'resources:capture' active_resource.id %}">
                     {% csrf_token %}
                     <button type="submit" class="button button--primary">再取得</button>
                 </form>
-                <button type="button" class="button button--ghost" disabled>⋯</button>
             </div>
         {% endif %}
     </section>

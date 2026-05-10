@@ -348,6 +348,154 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertContains(response, 'name="new_tags"', html=False)
         self.assertEqual(response.context["form"].fields["new_tags"].widget.__class__.__name__, "Textarea")
 
+    def test_api_recent_resources_returns_latest_visible_urls(self):
+        older = Resource.objects.create(
+            original_url="https://example.com/older",
+            normalized_url="https://example.com/older",
+            domain="example.com",
+            title_manual="Older Entry",
+        )
+        newer = Resource.objects.create(
+            original_url="https://example.com/newer",
+            normalized_url="https://example.com/newer",
+            domain="example.com",
+            title_manual="Newer Entry",
+        )
+        Resource.objects.create(
+            original_url="https://example.com/search-only",
+            normalized_url="https://example.com/search-only",
+            domain="example.com",
+            title_manual="Search Only Entry",
+            search_only=True,
+        )
+
+        response = self.client.get(reverse("resources:api_recent"), {"limit": 5})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual([item["id"] for item in payload["items"]], [newer.id, older.id])
+        self.assertEqual(payload["items"][0]["title"], "Newer Entry")
+
+    def test_api_search_resources_returns_matching_urls(self):
+        resource = Resource.objects.create(
+            original_url="https://example.com/keyword",
+            normalized_url="https://example.com/keyword",
+            domain="example.com",
+            title_manual="Keyword Entry",
+        )
+        resource.tags.add(self.tag_a)
+        snapshot = Snapshot.objects.create(
+            resource=resource,
+            snapshot_no=1,
+            fetch_url=resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            page_title="Keyword page",
+            extracted_text="keyword body",
+            ai_summary="summary text",
+        )
+        resource.latest_snapshot = snapshot
+        resource.save(update_fields=["latest_snapshot"])
+        Resource.objects.create(
+            original_url="https://example.com/other",
+            normalized_url="https://example.com/other",
+            domain="example.com",
+            title_manual="Other Entry",
+        )
+
+        response = self.client.get(reverse("resources:api_search"), {"q": "keyword"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["query"], "keyword")
+        self.assertEqual(payload["total_count"], 1)
+        self.assertEqual(payload["items"][0]["id"], resource.id)
+        self.assertEqual(payload["items"][0]["latest_snapshot"]["page_title"], "Keyword page")
+        self.assertEqual(payload["items"][0]["tags"][0]["name"], "alpha")
+
+    def test_api_search_resources_matches_tag_names(self):
+        resource = Resource.objects.create(
+            original_url="https://example.com/tagged",
+            normalized_url="https://example.com/tagged",
+            domain="example.com",
+            title_manual="Tagged Entry",
+        )
+        resource.tags.add(self.tag_a)
+        Resource.objects.create(
+            original_url="https://example.com/other-tagged",
+            normalized_url="https://example.com/other-tagged",
+            domain="example.com",
+            title_manual="Other Tagged Entry",
+        )
+
+        response = self.client.get(reverse("resources:api_search"), {"q": "alpha"})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["total_count"], 1)
+        self.assertEqual(payload["items"][0]["id"], resource.id)
+
+    def test_api_resource_detail_includes_latest_snapshot_media_assets(self):
+        resource = Resource.objects.create(
+            original_url="https://example.com/media",
+            normalized_url="https://example.com/media",
+            domain="example.com",
+            title_manual="Media Entry",
+            note="private note",
+        )
+        image_name = "snapshot_0001_img_01.jpg"
+        video_name = "snapshot_0001_vid_01.mp4"
+        image_dir = self.storage_base / "images" / f"resource_{resource.id:04d}"
+        video_dir = self.storage_base / "videos" / f"resource_{resource.id:04d}"
+        image_dir.mkdir(parents=True, exist_ok=True)
+        video_dir.mkdir(parents=True, exist_ok=True)
+        (image_dir / image_name).write_bytes(b"fake-image")
+        (video_dir / video_name).write_bytes(b"fake-video")
+        snapshot = Snapshot.objects.create(
+            resource=resource,
+            snapshot_no=1,
+            fetch_url=resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            page_title="Media page",
+            extracted_text="Full extracted text",
+            ai_translation="Full translation",
+            image_assets=[
+                {
+                    "source_url": "https://example.com/image.jpg",
+                    "path": f"storage/images/resource_{resource.id:04d}/{image_name}",
+                    "content_type": "image/jpeg",
+                    "size_bytes": 10,
+                }
+            ],
+            video_assets=[
+                {
+                    "source_url": "https://example.com/video.mp4",
+                    "path": f"storage/videos/resource_{resource.id:04d}/{video_name}",
+                    "content_type": "video/mp4",
+                    "size_bytes": 10,
+                }
+            ],
+        )
+        resource.latest_snapshot = snapshot
+        resource.save(update_fields=["latest_snapshot"])
+
+        response = self.client.get(reverse("resources:api_detail", args=[resource.id]))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        latest_snapshot = payload["latest_snapshot"]
+        self.assertEqual(payload["title"], "Media Entry")
+        self.assertEqual(payload["note"], "private note")
+        self.assertEqual(latest_snapshot["image_count"], 1)
+        self.assertEqual(latest_snapshot["video_count"], 1)
+        self.assertEqual([item["media_type"] for item in latest_snapshot["media_assets"]], ["image", "video"])
+        self.assertEqual(
+            latest_snapshot["media_assets"][0]["url"],
+            f"/storage/images/resource_{resource.id:04d}/{image_name}",
+        )
+
     def test_post_create_creates_resource_and_capture_job(self):
         response = self.client.post(
             reverse("resources:create"),
@@ -852,7 +1000,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(second_page.status_code, 200)
         self.assertEqual(len(second_page.context["resources"]), 1)
 
-    def test_detail_shows_snapshot_before_edit_section(self):
+    def test_detail_links_to_edit_page_without_inline_edit_form(self):
         resource = Resource.objects.create(
             original_url="https://example.com/detail-order",
             normalized_url="https://example.com/detail-order",
@@ -875,8 +1023,44 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             response = self.client.get(reverse("resources:detail", args=[resource.id]))
 
         self.assertEqual(response.status_code, 200)
-        content = response.content.decode("utf-8")
-        self.assertLess(content.find("最新スナップショット"), content.find('id="resource-edit"'))
+        self.assertContains(response, reverse("resources:edit", args=[resource.id]))
+        self.assertContains(response, ">編集<", html=False)
+        self.assertNotContains(response, 'id="resource-edit"')
+        self.assertNotContains(response, 'href="#resource-edit"')
+
+    def test_edit_page_updates_resource(self):
+        resource = Resource.objects.create(
+            original_url="https://example.com/edit-me",
+            normalized_url="https://example.com/edit-me",
+            domain="example.com",
+            title_manual="Before Edit",
+        )
+
+        get_response = self.client.get(reverse("resources:edit", args=[resource.id]))
+        self.assertEqual(get_response.status_code, 200)
+        self.assertContains(get_response, "URLを編集")
+
+        response = self.client.post(
+            reverse("resources:edit", args=[resource.id]),
+            {
+                "original_url": "https://example.com/edit-me",
+                "title_manual": "After Edit",
+                "save_reason": NOTE_TEMPLATE_CHOICES[0][0],
+                "next_action": "あとで確認する",
+                "recheck_at": "2026-05-02",
+                "review_state": ReviewState.DONE,
+                "capture_images": "on",
+                "capture_videos": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], reverse("resources:detail", args=[resource.id]))
+        resource.refresh_from_db()
+        self.assertEqual(resource.title_manual, "After Edit")
+        self.assertEqual(resource.save_reason, NOTE_TEMPLATE_CHOICES[0][0])
+        self.assertEqual(resource.next_action, "あとで確認する")
+        self.assertEqual(resource.review_state, ReviewState.DONE)
 
     def test_detail_shows_translation_when_available(self):
         resource = Resource.objects.create(
@@ -1382,6 +1566,134 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         self.assertEqual(result.translation, "")
         self.assertEqual(result.payload["translation_status"], "source_already_japanese")
         self.assertEqual(result.payload["translation_detected_language"], "ja")
+
+    @override_settings(
+        AI_PROVIDER="openclaw",
+        AI_MODEL="local-model",
+        AI_API_BASE="http://llm.local/v1",
+        AI_REQUEST_TIMEOUT=10,
+        AI_TEMPERATURE=0.1,
+        AI_MAX_OUTPUT_TOKENS=500,
+        AI_SUMMARY_MAX_CHARS=80,
+    )
+    def test_run_ai_pipeline_uses_local_llm_chat_completions(self):
+        snapshot = Snapshot(
+            resource=self.resource,
+            snapshot_no=1,
+            fetch_url=self.resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            page_title="English article",
+            extracted_text="Hello world from article body.",
+        )
+        captured = {}
+
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": (
+                                    '{"summary":"短い要約です。",'
+                                    '"translation":"これは英語記事の日本語訳です。",'
+                                    '"category":"documentation",'
+                                    '"tag_candidates":["local llm","archive"]}'
+                                )
+                            }
+                        }
+                    ]
+                }
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                captured["client_kwargs"] = kwargs
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def post(self, url, json):
+                captured["url"] = url
+                captured["request"] = json
+                return FakeResponse()
+
+        with patch("resources.services.httpx.Client", FakeClient):
+            result = run_ai_pipeline(snapshot)
+
+        self.assertEqual(captured["url"], "http://llm.local/v1/chat/completions")
+        self.assertEqual(captured["request"]["model"], "local-model")
+        self.assertEqual(captured["request"]["temperature"], 0.1)
+        self.assertEqual(captured["request"]["max_tokens"], 500)
+        self.assertEqual(result.summary, "短い要約です。")
+        self.assertEqual(result.translation, "これは英語記事の日本語訳です。")
+        self.assertEqual(result.category, "documentation")
+        self.assertEqual(result.payload["tag_candidates"], ["local llm", "archive"])
+        self.assertEqual(result.payload["model"], "local-model")
+
+    @override_settings(AI_PROVIDER="openclaw", AI_MODEL="local-model", AI_API_BASE="http://llm.local/v1")
+    def test_execute_ai_job_persists_local_llm_summary(self):
+        snapshot = Snapshot.objects.create(
+            resource=self.resource,
+            snapshot_no=1,
+            fetch_url=self.resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            page_title="English article",
+            extracted_text="Hello world from article body.",
+        )
+        ai_job = CaptureJob.objects.create(
+            resource=self.resource,
+            snapshot=snapshot,
+            job_type=JobType.AI_ENRICH,
+            status=JobStatus.QUEUED,
+        )
+
+        with patch(
+            "resources.services.local_llm_chat",
+            return_value=(
+                '{"summary":"保存用の要約です。",'
+                '"translation":"保存用の翻訳です。",'
+                '"category":"news",'
+                '"tag_candidates":["summary"]}'
+            ),
+        ):
+            self.assertTrue(run_one_job())
+
+        snapshot.refresh_from_db()
+        ai_job.refresh_from_db()
+        self.assertEqual(ai_job.status, JobStatus.SUCCEEDED)
+        self.assertEqual(snapshot.ai_summary, "保存用の要約です。")
+        self.assertEqual(snapshot.ai_translation, "保存用の翻訳です。")
+        self.assertEqual(snapshot.ai_category, "news")
+
+    @override_settings(AI_PROVIDER="openclaw", AI_MODEL="local-model", AI_API_BASE="http://llm.local/v1")
+    def test_run_ai_pipeline_rejects_non_japanese_local_llm_translation(self):
+        snapshot = Snapshot(
+            resource=self.resource,
+            snapshot_no=1,
+            fetch_url=self.resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            page_title="English article",
+            extracted_text="Hello world from article body.",
+        )
+
+        with patch(
+            "resources.services.local_llm_chat",
+            return_value=(
+                '{"summary":"保存用の要約です。",'
+                '"translation":"Hello world from article body.",'
+                '"category":"general",'
+                '"tag_candidates":["summary"]}'
+            ),
+        ):
+            result = run_ai_pipeline(snapshot)
+
+        self.assertEqual(result.translation, "")
+        self.assertEqual(result.payload["translation_status"], "llm_translation_unavailable")
 
     def test_capture_success_persists_downloaded_images(self):
         enqueue_capture_job(self.resource)

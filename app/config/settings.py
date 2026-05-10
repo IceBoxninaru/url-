@@ -175,6 +175,11 @@ AI_PROVIDER = os.getenv("AI_PROVIDER", "heuristic")
 AI_MODEL = os.getenv("AI_MODEL", "")
 AI_MAX_INPUT_CHARS = int(os.getenv("AI_MAX_INPUT_CHARS", "12000"))
 AI_SUMMARY_MAX_CHARS = int(os.getenv("AI_SUMMARY_MAX_CHARS", "320"))
+AI_API_BASE = os.getenv("AI_API_BASE", "http://127.0.0.1:11434/v1").rstrip("/")
+AI_API_KEY = os.getenv("AI_API_KEY", "").strip()
+AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "90"))
+AI_TEMPERATURE = float(os.getenv("AI_TEMPERATURE", "0.2"))
+AI_MAX_OUTPUT_TOKENS = int(os.getenv("AI_MAX_OUTPUT_TOKENS", "1200"))
 
 JOB_MAX_RETRIES = int(os.getenv("JOB_MAX_RETRIES", "3"))
 JOB_RETRY_DELAYS_SECONDS = [

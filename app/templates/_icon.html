@@ -1,0 +1,76 @@
+<svg class="ui-icon{% if name == 'star-filled' %} ui-icon--filled{% endif %}{% if name == 'settings' %} ui-icon--settings{% endif %}" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+    {% if name == "brand" %}
+        <rect x="5" y="5" width="14" height="14" rx="3"></rect>
+        <rect x="8.5" y="8.5" width="7" height="7" rx="1.6"></rect>
+    {% elif name == "dashboard" %}
+        <rect x="4" y="4" width="6" height="6" rx="1.5"></rect>
+        <rect x="14" y="4" width="6" height="6" rx="1.5"></rect>
+        <rect x="4" y="14" width="6" height="6" rx="1.5"></rect>
+        <rect x="14" y="14" width="6" height="6" rx="1.5"></rect>
+    {% elif name == "list" %}
+        <path d="M9 6h11"></path>
+        <path d="M9 12h11"></path>
+        <path d="M9 18h11"></path>
+        <path d="M4 6h.01"></path>
+        <path d="M4 12h.01"></path>
+        <path d="M4 18h.01"></path>
+    {% elif name == "create" %}
+        <circle cx="12" cy="12" r="8"></circle>
+        <path d="M12 8v8"></path>
+        <path d="M8 12h8"></path>
+    {% elif name == "bulk" %}
+        <path d="M5 6h14"></path>
+        <path d="M5 12h9"></path>
+        <path d="M5 18h7"></path>
+        <path d="M17 14v6"></path>
+        <path d="M14 17h6"></path>
+    {% elif name == "snapshots" %}
+        <rect x="5" y="4" width="14" height="16" rx="2"></rect>
+        <path d="M8 8h8"></path>
+        <path d="M8 12h5"></path>
+        <path d="M8 16h8"></path>
+    {% elif name == "settings" %}
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"></path>
+        <circle cx="12" cy="12" r="3"></circle>
+    {% elif name == "search" %}
+        <circle cx="10.5" cy="10.5" r="5.5"></circle>
+        <path d="m15 15 4.5 4.5"></path>
+    {% elif name == "filter" %}
+        <path d="M4 6h16"></path>
+        <path d="M7 12h10"></path>
+        <path d="M10 18h4"></path>
+    {% elif name == "table" %}
+        <rect x="4" y="5" width="16" height="14" rx="2"></rect>
+        <path d="M4 10h16"></path>
+        <path d="M10 5v14"></path>
+        <path d="M15 5v14"></path>
+    {% elif name == "link" %}
+        <path d="M10 13a5 5 0 0 0 7.1.1l1.4-1.4a5 5 0 0 0-7.1-7.1l-.8.8"></path>
+        <path d="M14 11a5 5 0 0 0-7.1-.1l-1.4 1.4a5 5 0 0 0 7.1 7.1l.8-.8"></path>
+    {% elif name == "alert" %}
+        <path d="M12 4 21 20H3L12 4Z"></path>
+        <path d="M12 9v5"></path>
+        <path d="M12 17h.01"></path>
+    {% elif name == "clock" %}
+        <circle cx="12" cy="12" r="8"></circle>
+        <path d="M12 8v5l3 2"></path>
+    {% elif name == "star" %}
+        <path d="m12 4 2.35 4.75 5.25.76-3.8 3.7.9 5.22L12 15.96 7.3 18.43l.9-5.22-3.8-3.7 5.25-.76L12 4Z"></path>
+    {% elif name == "star-filled" %}
+        <path d="m12 4 2.35 4.75 5.25.76-3.8 3.7.9 5.22L12 15.96 7.3 18.43l.9-5.22-3.8-3.7 5.25-.76L12 4Z"></path>
+    {% elif name == "check" %}
+        <circle cx="12" cy="12" r="8"></circle>
+        <path d="m8.5 12.5 2.2 2.2 4.8-5.2"></path>
+    {% elif name == "spark" %}
+        <path d="M12 3v5"></path>
+        <path d="M12 16v5"></path>
+        <path d="M4.2 6.2 7.7 9.7"></path>
+        <path d="m16.3 16.3 3.5 3.5"></path>
+        <path d="M3 12h5"></path>
+        <path d="M16 12h5"></path>
+        <path d="m4.2 19.8 3.5-3.5"></path>
+        <path d="m16.3 7.7 3.5-3.5"></path>
+    {% else %}
+        <circle cx="12" cy="12" r="8"></circle>
+    {% endif %}
+</svg>

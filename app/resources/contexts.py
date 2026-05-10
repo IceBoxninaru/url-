@@ -6,12 +6,10 @@ from django.core.paginator import Paginator
 from django.urls import reverse
 from django.utils import timezone
 
-from resources.forms import ResourceFilterForm, ResourceForm
+from resources.forms import ResourceFilterForm
 from resources.models import Resource, ReviewState
 from resources.services import get_capture_files
-from jobs.models import CaptureJob, JobStatus, JobType
 from snapshots.models import Snapshot
-from tags.models import Tag
 
 LIST_PAGE_SIZE = 10
 BULK_EDIT_PAGE_SIZE = 10
@@ -43,11 +41,10 @@ def build_snapshot_detail_context(snapshot: Snapshot) -> dict:
     }
 
 
-def build_resource_detail_context(resource, form=None) -> dict:
+def build_resource_detail_context(resource) -> dict:
     image_files, video_files = get_capture_files(resource.latest_snapshot)
     return {
         "resource": resource,
-        "form": form or ResourceForm(instance=resource),
         "snapshots": resource.snapshots.all()[:10],
         "latest_snapshot_context": build_snapshot_payload_context(resource.latest_snapshot),
         "image_files": image_files,
@@ -113,80 +110,7 @@ def build_overview_metrics() -> list[dict]:
 def build_dashboard_context() -> dict:
     return {
         "overview_metrics": build_overview_metrics(),
-        "recent_activity": build_recent_activity(limit=10),
-        "tag_count": Tag.objects.count(),
-        "job_count": CaptureJob.objects.count(),
-        "queued_job_count": CaptureJob.objects.filter(
-            status__in=[JobStatus.QUEUED, JobStatus.RETRY_WAIT]
-        ).count(),
     }
-
-
-def describe_job_activity(job: CaptureJob) -> dict:
-    if job.job_type == JobType.CAPTURE:
-        if job.status == JobStatus.SUCCEEDED:
-            return {
-                "tone": "success",
-                "icon": "check",
-                "title": "ページを取得しました",
-            }
-        if job.status == JobStatus.RETRY_WAIT:
-            return {
-                "tone": "warning",
-                "icon": "clock",
-                "title": "再確認タスクを追加しました",
-            }
-        if job.status == JobStatus.FAILED:
-            return {
-                "tone": "danger",
-                "icon": "alert",
-                "title": "取得に失敗しました",
-            }
-        return {
-            "tone": "info",
-            "icon": "link",
-            "title": "新しいURLを登録しました",
-        }
-
-    if job.status == JobStatus.SUCCEEDED:
-        return {
-            "tone": "info",
-            "icon": "spark",
-            "title": "AI翻訳を更新しました",
-        }
-    return {
-        "tone": "info",
-        "icon": "spark",
-        "title": "AI補完を処理しました",
-    }
-
-
-def build_recent_activity(limit: int = 5) -> list[dict]:
-    activity_items: list[dict] = []
-    for job in CaptureJob.objects.with_related().filter(resource__search_only=False)[:limit]:
-        descriptor = describe_job_activity(job)
-        activity_items.append(
-            {
-                **descriptor,
-                "resource": job.resource,
-                "timestamp": job.updated_at,
-            }
-        )
-
-    if activity_items:
-        return activity_items
-
-    for resource in Resource.objects.with_related().filter(search_only=False)[:limit]:
-        activity_items.append(
-            {
-                "tone": "info",
-                "icon": "link",
-                "title": "URLを登録しました",
-                "resource": resource,
-                "timestamp": resource.updated_at,
-            }
-        )
-    return activity_items
 
 
 def paginate_queryset(queryset, page_number, *, per_page: int):
