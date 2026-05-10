@@ -200,7 +200,21 @@ def build_resource_list_signature(resources) -> str:
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()
 
 
-def build_resource_list_context(request) -> dict:
+def build_resource_list_context(
+    request,
+    *,
+    visibility: str = "normal",
+    date_ordered: bool = False,
+    filter_variant: str = "full",
+    table_variant: str = "standard",
+    fragment_url_name: str = "resources:list_fragment",
+    clear_url_name: str = "resources:list",
+    page_title: str = "保存したURL一覧",
+    page_subtitle: str = "保存したURLの取得状態や見直し状況を確認・管理できます。",
+    result_title: str = "保存したURL一覧",
+    result_empty_title: str = "保存されたURLはまだありません",
+    result_empty_text: str = "左側サイドバーの「URL登録」から新しいURLを追加できます。",
+) -> dict:
     filter_form = ResourceFilterForm(request.GET)
     resources = Resource.objects.all()
     if filter_form.is_valid():
@@ -213,13 +227,30 @@ def build_resource_list_context(request) -> dict:
             review_state=filter_form.cleaned_data.get("review_state") or "",
             save_reason=filter_form.cleaned_data.get("save_reason") or "",
             recheck_due_only=filter_form.cleaned_data.get("recheck_due_only") or False,
+            visibility=visibility,
         )
     else:
         resources = resources.with_related()
+        if visibility == "search_only":
+            resources = resources.filter(search_only=True)
+        elif visibility == "normal":
+            resources = resources.exclude(search_only=True)
+
+    if date_ordered:
+        resources = resources.order_by("-created_at", "-id")
 
     page_obj = paginate_queryset(resources, request.GET.get("page"), per_page=LIST_PAGE_SIZE)
     resource_list = list(page_obj.object_list)
     return {
+        "page_title": page_title,
+        "page_subtitle": page_subtitle,
+        "filter_variant": filter_variant,
+        "table_variant": table_variant,
+        "result_title": result_title,
+        "result_empty_title": result_empty_title,
+        "result_empty_text": result_empty_text,
+        "list_form_action_url": reverse(clear_url_name),
+        "list_clear_url": reverse(clear_url_name),
         "filter_form": filter_form,
         "resources": resource_list,
         "page_obj": page_obj,
@@ -228,6 +259,23 @@ def build_resource_list_context(request) -> dict:
         "resource_start": page_obj.start_index() if page_obj.paginator.count else 0,
         "resource_end": page_obj.end_index() if page_obj.paginator.count else 0,
         "resource_signature": build_resource_list_signature(resource_list),
-        "resource_fragment_url": reverse("resources:list_fragment"),
+        "resource_fragment_url": reverse(fragment_url_name),
         "resource_poll_ms": 10000,
     }
+
+
+def build_ai_search_resource_list_context(request) -> dict:
+    return build_resource_list_context(
+        request,
+        visibility="search_only",
+        date_ordered=True,
+        filter_variant="ai_search",
+        table_variant="date_focused",
+        fragment_url_name="resources:ai_search_list_fragment",
+        clear_url_name="resources:ai_search_list",
+        page_title="AI検索URL",
+        page_subtitle="AIに探させたURLを通常一覧とは分け、保存日が新しい順で確認できます。",
+        result_title="AI検索URL一覧（保存日順）",
+        result_empty_title="AI検索URLはまだありません",
+        result_empty_text="今後AIに探させたURLは、検索専用URLとしてここに保存できます。",
+    )

@@ -755,6 +755,20 @@ button:disabled {
     gap: 12px;
 }
 
+.filter-form--ai-search {
+    gap: 14px;
+}
+
+.filter-grid--ai-search {
+    grid-template-columns: minmax(260px, 1fr) auto;
+    align-items: end;
+    gap: 12px;
+}
+
+.filter-form--ai-search .button--primary {
+    min-width: 132px;
+}
+
 .field-group {
     display: grid;
     gap: 8px;
@@ -1178,6 +1192,13 @@ input[type="checkbox"] {
     word-break: break-word;
 }
 
+.resource-table__date-main {
+    margin-bottom: 4px;
+    color: var(--text);
+    font-size: 1rem;
+    font-weight: 800;
+}
+
 .resource-table__url {
     display: block;
     max-width: 100%;
@@ -1219,6 +1240,18 @@ input[type="checkbox"] {
     background: transparent;
     line-height: 1.35;
     font-weight: 800;
+}
+
+.resource-table--date-focused th:nth-child(3),
+.resource-table--date-focused th:nth-child(4),
+.resource-table--date-focused td.resource-table__cell--created,
+.resource-table--date-focused td.resource-table__cell--updated {
+    width: 126px;
+    white-space: nowrap;
+}
+
+.resource-table--date-focused .resource-table__cell--tags {
+    min-width: 180px;
 }
 
 .resource-table--selection td:first-child,
@@ -1686,6 +1719,7 @@ input[type="checkbox"] {
     .metric-grid,
     .filter-grid,
     .filter-grid--compact,
+    .filter-grid--ai-search,
     .form-grid,
     .toggle-grid,
     .snapshot-focus,
@@ -2100,6 +2134,20 @@ input[type="checkbox"] {
         display: none;
     }
 
+    .resource-table--date-focused .resource-table__cell--created {
+        min-height: 52px;
+        padding: 8px;
+        border: 1px solid rgba(51, 65, 85, 0.58);
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.48);
+        align-content: center;
+    }
+
+    .resource-table--date-focused .resource-table__cell--tags {
+        grid-column: 1 / -1;
+        padding-top: 2px;
+    }
+
     .resource-table__cell--review,
     .resource-table__cell--capture,
     .resource-table__cell--link {
@@ -2147,6 +2195,16 @@ input[type="checkbox"] {
         border-top: 1px solid var(--line);
         color: var(--muted);
         font-size: 0.84rem;
+    }
+
+    .resource-table--date-focused .resource-table__cell--updated {
+        grid-column: auto;
+        min-height: 52px;
+        padding: 8px;
+        border: 1px solid rgba(51, 65, 85, 0.58);
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.48);
+        align-content: center;
     }
 
     .resource-table__cell--updated p {

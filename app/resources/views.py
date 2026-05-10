@@ -8,6 +8,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from resources.contexts import (
     BULK_EDIT_PAGE_SIZE,
+    build_ai_search_resource_list_context,
     build_dashboard_context,
     build_pagination_context,
     build_resource_detail_context,
@@ -277,6 +278,24 @@ def resource_list(request):
 @require_GET
 def resource_list_fragment(request):
     context = build_resource_list_context(request)
+    html = render_to_string("resources/_resource_results.html", context, request=request)
+    return JsonResponse(
+        {
+            "html": html,
+            "signature": context["resource_signature"],
+            "count": context["resource_count"],
+        }
+    )
+
+
+@require_GET
+def ai_search_resource_list(request):
+    return render(request, "resources/list.html", build_ai_search_resource_list_context(request))
+
+
+@require_GET
+def ai_search_resource_list_fragment(request):
+    context = build_ai_search_resource_list_context(request)
     html = render_to_string("resources/_resource_results.html", context, request=request)
     return JsonResponse(
         {

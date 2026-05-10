@@ -114,13 +114,19 @@ class ResourceQuerySet(models.QuerySet):
         review_state: str = "",
         save_reason: str = "",
         recheck_due_only: bool = False,
+        visibility: str = "normal",
     ):
         queryset = self.with_related()
         query = (query or "").strip()
         if query:
             queryset = queryset._apply_text_search(query)
         else:
-            queryset = queryset.exclude(search_only=True).order_by("-favorite", "-updated_at")
+            queryset = queryset.order_by("-favorite", "-updated_at")
+
+        if visibility == "search_only":
+            queryset = queryset.filter(search_only=True)
+        elif visibility == "normal" and not query:
+            queryset = queryset.exclude(search_only=True)
 
         if domain:
             queryset = queryset.filter(domain=domain)

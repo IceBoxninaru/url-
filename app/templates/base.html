@@ -37,6 +37,13 @@
                     <span>一覧</span>
                 </a>
                 <a
+                    href="{% url 'resources:ai_search_list' %}"
+                    class="app-nav__link {% if namespace == 'resources' and url_name == 'ai_search_list' or namespace == 'resources' and url_name == 'ai_search_list_fragment' %}is-active{% endif %}"
+                >
+                    <span class="app-nav__icon" aria-hidden="true">⌕</span>
+                    <span>AI検索URL</span>
+                </a>
+                <a
                     href="{% url 'resources:create' %}"
                     class="app-nav__link {% if namespace == 'resources' and url_name == 'create' %}is-active{% endif %}"
                 >

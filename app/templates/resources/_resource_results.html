@@ -9,7 +9,7 @@
         <div class="section-heading__title">
             <span class="section-heading__icon" aria-hidden="true">{% include "_icon.html" with name="table" only %}</span>
             <div>
-                <h2>保存したURL一覧</h2>
+                <h2>{{ result_title|default:"保存したURL一覧" }}</h2>
                 <p class="section-subtitle">{{ resource_count }} 件中 {{ resource_start }} - {{ resource_end }} 件を表示しています。</p>
             </div>
         </div>
@@ -18,22 +18,28 @@
 
     {% if resources %}
         <div class="table-scroll">
-            <table class="resource-table">
+            <table class="resource-table {% if table_variant == 'date_focused' %}resource-table--date-focused{% endif %}">
                 <thead>
                     <tr>
                         <th>タイトル / ドメイン</th>
-                        <th>保存理由</th>
-                        <th>見直し状態</th>
-                        <th>取得状態</th>
-                        <th>リンク状態</th>
-                        <th>次の行動</th>
-                        <th>再確認日</th>
-                        <th>タグ</th>
-                        <th>
-                            <span class="table-head-icon" aria-hidden="true">{% include "_icon.html" with name="star" only %}</span>
-                            <span class="sr-only">お気に入り</span>
-                        </th>
-                        <th>最終更新</th>
+                        {% if table_variant == "date_focused" %}
+                            <th>タグ</th>
+                            <th>保存日</th>
+                            <th>更新日</th>
+                        {% else %}
+                            <th>保存理由</th>
+                            <th>見直し状態</th>
+                            <th>取得状態</th>
+                            <th>リンク状態</th>
+                            <th>次の行動</th>
+                            <th>再確認日</th>
+                            <th>タグ</th>
+                            <th>
+                                <span class="table-head-icon" aria-hidden="true">{% include "_icon.html" with name="star" only %}</span>
+                                <span class="sr-only">お気に入り</span>
+                            </th>
+                            <th>最終更新</th>
+                        {% endif %}
                     </tr>
                 </thead>
                 <tbody>
@@ -56,7 +62,7 @@
                                         <p class="resource-table__url">{{ resource.original_url }}</p>
                                         {% if resource.search_only or resource.favorite %}
                                             <div class="status-row resource-table__status-row">
-                                                {% if resource.search_only %}
+                                                {% if resource.search_only and table_variant != "date_focused" %}
                                                     <span class="tone-chip tone-chip--neutral">検索専用</span>
                                                 {% endif %}
                                                 {% if resource.favorite %}
@@ -75,64 +81,87 @@
                                     </div>
                                 </div>
                             </td>
-                            <td class="resource-table__cell resource-table__cell--reason" data-label="保存理由">
-                                {% if resource.save_reason %}
-                                    <span class="tone-chip tone-chip--neutral">{{ resource.get_save_reason_display }}</span>
-                                {% else %}
-                                    <span class="muted">-</span>
-                                {% endif %}
-                            </td>
-                            <td class="resource-table__cell resource-table__cell--review" data-label="見直し">
-                                {% if resource.review_state != "none" %}
-                                    <span class="status-chip status-chip--review-{{ resource.review_state }}">{{ resource.get_review_state_display }}</span>
-                                {% else %}
-                                    <span class="muted">未設定</span>
-                                {% endif %}
-                            </td>
-                            <td class="resource-table__cell resource-table__cell--capture" data-label="取得">
-                                <span class="status-chip status-chip--resource-{{ resource.current_status }}">{{ resource.get_current_status_display }}</span>
-                            </td>
-                            <td class="resource-table__cell resource-table__cell--link" data-label="リンク">
-                                {% if resource.link_status != "unchecked" %}
-                                    <span class="status-chip status-chip--link-{{ resource.link_status }}">{{ resource.get_link_status_display }}</span>
-                                {% else %}
-                                    <span class="muted">未確認</span>
-                                {% endif %}
-                            </td>
-                            <td class="resource-table__cell resource-table__cell--next-action" data-label="次の行動">{{ resource.next_action|default:"-" }}</td>
-                            <td class="resource-table__cell resource-table__cell--recheck" data-label="再確認">
-                                {% if resource.recheck_at %}
-                                    {{ resource.recheck_at|date:"Y/m/d" }}
-                                    {% if resource.is_recheck_due %}
-                                        <div class="muted text-danger">あと0日</div>
+                            {% if table_variant == "date_focused" %}
+                                <td class="resource-table__cell resource-table__cell--tags" data-label="タグ">
+                                    <div class="tag-chip-list">
+                                        {% for tag in resource.tags.all %}
+                                            <span class="tag-chip" style="--tag-color: {{ tag.color }}">{{ tag.name }}</span>
+                                        {% empty %}
+                                            <span class="muted">-</span>
+                                        {% endfor %}
+                                    </div>
+                                </td>
+                                <td class="resource-table__cell resource-table__cell--created" data-label="保存日">
+                                    <p class="resource-table__date-main">{{ resource.created_at|date:"Y/m/d" }}</p>
+                                    <p class="muted">{{ resource.created_at|date:"H:i" }}</p>
+                                </td>
+                                <td class="resource-table__cell resource-table__cell--updated" data-label="更新">
+                                    <p>{{ resource.updated_at|date:"Y/m/d" }}</p>
+                                    <p class="muted">{{ resource.updated_at|date:"H:i" }}</p>
+                                    {% if resource.latest_translation %}
+                                        <p class="resource-table__summary">{{ resource.latest_translation|truncatechars:56 }}</p>
                                     {% endif %}
-                                {% else %}
-                                    <span class="muted">-</span>
-                                {% endif %}
-                            </td>
-                            <td class="resource-table__cell resource-table__cell--tags" data-label="タグ">
-                                <div class="tag-chip-list">
-                                    {% for tag in resource.tags.all %}
-                                        <span class="tag-chip" style="--tag-color: {{ tag.color }}">{{ tag.name }}</span>
-                                    {% empty %}
+                                </td>
+                            {% else %}
+                                <td class="resource-table__cell resource-table__cell--reason" data-label="保存理由">
+                                    {% if resource.save_reason %}
+                                        <span class="tone-chip tone-chip--neutral">{{ resource.get_save_reason_display }}</span>
+                                    {% else %}
                                         <span class="muted">-</span>
-                                    {% endfor %}
-                                </div>
-                            </td>
-                            <td class="resource-table__cell resource-table__cell--favorite resource-table__star" data-label="お気に入り">
-                                {% if resource.favorite %}
-                                    {% include "_icon.html" with name="star-filled" only %}
-                                {% else %}
-                                    {% include "_icon.html" with name="star" only %}
-                                {% endif %}
-                            </td>
-                            <td class="resource-table__cell resource-table__cell--updated" data-label="更新">
-                                <p>{{ resource.updated_at|date:"Y/m/d" }}</p>
-                                <p class="muted">{{ resource.updated_at|date:"H:i" }}</p>
-                                {% if resource.latest_translation %}
-                                    <p class="resource-table__summary">{{ resource.latest_translation|truncatechars:56 }}</p>
-                                {% endif %}
-                            </td>
+                                    {% endif %}
+                                </td>
+                                <td class="resource-table__cell resource-table__cell--review" data-label="見直し">
+                                    {% if resource.review_state != "none" %}
+                                        <span class="status-chip status-chip--review-{{ resource.review_state }}">{{ resource.get_review_state_display }}</span>
+                                    {% else %}
+                                        <span class="muted">未設定</span>
+                                    {% endif %}
+                                </td>
+                                <td class="resource-table__cell resource-table__cell--capture" data-label="取得">
+                                    <span class="status-chip status-chip--resource-{{ resource.current_status }}">{{ resource.get_current_status_display }}</span>
+                                </td>
+                                <td class="resource-table__cell resource-table__cell--link" data-label="リンク">
+                                    {% if resource.link_status != "unchecked" %}
+                                        <span class="status-chip status-chip--link-{{ resource.link_status }}">{{ resource.get_link_status_display }}</span>
+                                    {% else %}
+                                        <span class="muted">未確認</span>
+                                    {% endif %}
+                                </td>
+                                <td class="resource-table__cell resource-table__cell--next-action" data-label="次の行動">{{ resource.next_action|default:"-" }}</td>
+                                <td class="resource-table__cell resource-table__cell--recheck" data-label="再確認">
+                                    {% if resource.recheck_at %}
+                                        {{ resource.recheck_at|date:"Y/m/d" }}
+                                        {% if resource.is_recheck_due %}
+                                            <div class="muted text-danger">あと0日</div>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td class="resource-table__cell resource-table__cell--tags" data-label="タグ">
+                                    <div class="tag-chip-list">
+                                        {% for tag in resource.tags.all %}
+                                            <span class="tag-chip" style="--tag-color: {{ tag.color }}">{{ tag.name }}</span>
+                                        {% empty %}
+                                            <span class="muted">-</span>
+                                        {% endfor %}
+                                    </div>
+                                </td>
+                                <td class="resource-table__cell resource-table__cell--favorite resource-table__star" data-label="お気に入り">
+                                    {% if resource.favorite %}
+                                        {% include "_icon.html" with name="star-filled" only %}
+                                    {% else %}
+                                        {% include "_icon.html" with name="star" only %}
+                                    {% endif %}
+                                </td>
+                                <td class="resource-table__cell resource-table__cell--updated" data-label="更新">
+                                    <p>{{ resource.updated_at|date:"Y/m/d" }}</p>
+                                    <p class="muted">{{ resource.updated_at|date:"H:i" }}</p>
+                                    {% if resource.latest_translation %}
+                                        <p class="resource-table__summary">{{ resource.latest_translation|truncatechars:56 }}</p>
+                                    {% endif %}
+                                </td>
+                            {% endif %}
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -140,8 +169,8 @@
         </div>
     {% else %}
         <div class="empty-state">
-            <h3>保存されたURLはまだありません</h3>
-            <p>左側サイドバーの「URL登録」から新しいURLを追加できます。</p>
+            <h3>{{ result_empty_title|default:"保存されたURLはまだありません" }}</h3>
+            <p>{{ result_empty_text|default:"左側サイドバーの「URL登録」から新しいURLを追加できます。" }}</p>
         </div>
     {% endif %}
 

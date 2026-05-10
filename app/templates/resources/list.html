@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}一覧 | URL Archive{% endblock %}
+{% block title %}{{ page_title|default:"一覧" }} | URL Archive{% endblock %}
 
 {% block content %}
 <div class="workspace-stack">
     <section class="page-header">
         <div>
-            <h1>保存したURL一覧</h1>
-            <p class="page-subtitle">保存したURLの取得状態や見直し状況を確認・管理できます。</p>
+            <h1>{{ page_title|default:"保存したURL一覧" }}</h1>
+            <p class="page-subtitle">{{ page_subtitle|default:"保存したURLの取得状態や見直し状況を確認・管理できます。" }}</p>
         </div>
     </section>
 
@@ -22,51 +22,67 @@
                     <p class="section-subtitle">必要な条件だけをコンパクトに指定できます。</p>
                 </div>
             </div>
-            <a href="{% url 'resources:list' %}" class="button button--soft">クリア</a>
+            <a href="{{ list_clear_url|default:'#' }}" class="button button--soft">クリア</a>
         </div>
 
-        <form method="get" action="{% url 'resources:list' %}" class="filter-form filter-form--compact">
-            <div class="filter-grid filter-grid--compact">
-                <label class="field-group field-group--wide">
-                    <span class="field-label">キーワード</span>
-                    {{ filter_form.q }}
-                </label>
-                <label class="field-group">
-                    <span class="field-label">ドメイン</span>
-                    {{ filter_form.domain }}
-                </label>
-                <label class="field-group">
-                    <span class="field-label">取得状態</span>
-                    {{ filter_form.status }}
-                </label>
-                <label class="field-group">
-                    <span class="field-label">見直し状態</span>
-                    {{ filter_form.review_state }}
-                </label>
-                <label class="field-group">
-                    <span class="field-label">保存理由</span>
-                    {{ filter_form.save_reason }}
-                </label>
-            </div>
-
-            <div class="filter-inline-row">
-                <label class="toggle-inline">
-                    {{ filter_form.favorite_only }}
-                    <span>お気に入りのみ</span>
-                </label>
-                <label class="toggle-inline">
-                    {{ filter_form.recheck_due_only }}
-                    <span>再確認待ちのみ</span>
-                </label>
-                <button type="submit" class="button button--primary">絞り込む</button>
-            </div>
-
-            <details class="filter-details">
-                <summary>タグで絞り込む</summary>
-                <div class="tag-selector-grid filter-details__body">
-                    {{ filter_form.tags }}
+        <form method="get" action="{{ list_form_action_url|default:request.path }}" class="filter-form filter-form--compact {% if filter_variant == 'ai_search' %}filter-form--ai-search{% endif %}">
+            {% if filter_variant == "ai_search" %}
+                <div class="filter-grid filter-grid--ai-search">
+                    <label class="field-group">
+                        <span class="field-label">キーワード</span>
+                        {{ filter_form.q }}
+                    </label>
+                    <button type="submit" class="button button--primary">絞り込む</button>
                 </div>
-            </details>
+                <label class="field-group field-group--full">
+                    <span class="field-label">タグ</span>
+                    <div class="tag-selector-grid">
+                        {{ filter_form.tags }}
+                    </div>
+                </label>
+            {% else %}
+                <div class="filter-grid filter-grid--compact">
+                    <label class="field-group field-group--wide">
+                        <span class="field-label">キーワード</span>
+                        {{ filter_form.q }}
+                    </label>
+                    <label class="field-group">
+                        <span class="field-label">ドメイン</span>
+                        {{ filter_form.domain }}
+                    </label>
+                    <label class="field-group">
+                        <span class="field-label">取得状態</span>
+                        {{ filter_form.status }}
+                    </label>
+                    <label class="field-group">
+                        <span class="field-label">見直し状態</span>
+                        {{ filter_form.review_state }}
+                    </label>
+                    <label class="field-group">
+                        <span class="field-label">保存理由</span>
+                        {{ filter_form.save_reason }}
+                    </label>
+                </div>
+
+                <div class="filter-inline-row">
+                    <label class="toggle-inline">
+                        {{ filter_form.favorite_only }}
+                        <span>お気に入りのみ</span>
+                    </label>
+                    <label class="toggle-inline">
+                        {{ filter_form.recheck_due_only }}
+                        <span>再確認待ちのみ</span>
+                    </label>
+                    <button type="submit" class="button button--primary">絞り込む</button>
+                </div>
+
+                <details class="filter-details">
+                    <summary>タグで絞り込む</summary>
+                    <div class="tag-selector-grid filter-details__body">
+                        {{ filter_form.tags }}
+                    </div>
+                </details>
+            {% endif %}
         </form>
     </section>
 

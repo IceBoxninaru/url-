@@ -799,6 +799,102 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(list(search_response.context["resources"]), [hidden_resource])
         self.assertContains(search_response, "検索専用")
 
+    def test_ai_search_list_shows_only_search_only_resources(self):
+        Resource.objects.create(
+            original_url="https://example.com/visible",
+            normalized_url="https://example.com/visible",
+            domain="example.com",
+            title_manual="Visible Entry",
+        )
+        ai_resource = Resource.objects.create(
+            original_url="https://example.com/ai-found",
+            normalized_url="https://example.com/ai-found",
+            domain="example.com",
+            title_manual="AI Found Entry",
+            search_only=True,
+        )
+
+        response = self.client.get(reverse("resources:ai_search_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context["resources"]), [ai_resource])
+        self.assertContains(response, "AI検索URL")
+        self.assertContains(response, "AI Found Entry")
+        self.assertContains(response, "保存日")
+        self.assertNotContains(response, "Visible Entry")
+        self.assertNotContains(response, 'name="domain"', html=False)
+        self.assertNotContains(response, 'name="status"', html=False)
+        self.assertNotContains(response, 'name="review_state"', html=False)
+        self.assertNotContains(response, 'name="save_reason"', html=False)
+        self.assertNotContains(response, 'name="favorite_only"', html=False)
+        self.assertNotContains(response, 'name="recheck_due_only"', html=False)
+
+    def test_ai_search_list_query_stays_in_search_only_scope(self):
+        Resource.objects.create(
+            original_url="https://example.com/normal-ai",
+            normalized_url="https://example.com/normal-ai",
+            domain="example.com",
+            title_manual="Shared Keyword",
+        )
+        ai_resource = Resource.objects.create(
+            original_url="https://example.com/hidden-ai",
+            normalized_url="https://example.com/hidden-ai",
+            domain="example.com",
+            title_manual="Shared Keyword",
+            search_only=True,
+        )
+
+        response = self.client.get(reverse("resources:ai_search_list"), {"q": "Shared"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context["resources"]), [ai_resource])
+
+    def test_ai_search_list_is_ordered_by_created_at(self):
+        older_resource = Resource.objects.create(
+            original_url="https://example.com/older-ai",
+            normalized_url="https://example.com/older-ai",
+            domain="example.com",
+            title_manual="Older AI Entry",
+            search_only=True,
+        )
+        newer_resource = Resource.objects.create(
+            original_url="https://example.com/newer-ai",
+            normalized_url="https://example.com/newer-ai",
+            domain="example.com",
+            title_manual="Newer AI Entry",
+            search_only=True,
+        )
+
+        response = self.client.get(reverse("resources:ai_search_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context["resources"]), [newer_resource, older_resource])
+
+    def test_ai_search_list_fragment_returns_search_only_html(self):
+        ai_resource = Resource.objects.create(
+            original_url="https://example.com/live-ai",
+            normalized_url="https://example.com/live-ai",
+            domain="example.com",
+            title_manual="Live AI Entry",
+            search_only=True,
+        )
+        Resource.objects.create(
+            original_url="https://example.com/live-normal",
+            normalized_url="https://example.com/live-normal",
+            domain="example.com",
+            title_manual="Live Normal Entry",
+        )
+
+        response = self.client.get(reverse("resources:ai_search_list_fragment"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 1)
+        self.assertIn("Live AI Entry", payload["html"])
+        self.assertIn(str(ai_resource.id), payload["html"])
+        self.assertNotIn("Live Normal Entry", payload["html"])
+        self.assertTrue(payload["signature"])
+
     def test_list_shows_link_to_create_page(self):
         response = self.client.get(reverse("resources:list"))
         self.assertEqual(response.status_code, 200)
