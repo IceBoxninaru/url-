@@ -1295,9 +1295,9 @@ input[type="checkbox"] {
 }
 
 .interest-toggle--not-interested.is-active {
-    background: rgba(148, 163, 184, 0.12);
-    color: #cbd5e1;
-    border-color: rgba(148, 163, 184, 0.34);
+    background: var(--danger-soft);
+    color: var(--danger);
+    border-color: rgba(255, 107, 129, 0.48);
 }
 
 .resource-table--selection td:first-child,
