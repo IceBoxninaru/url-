@@ -22,6 +22,7 @@ from resources.services import (
     delete_resource_with_artifacts,
     enqueue_capture_job,
     get_capture_files,
+    get_snapshot_screenshot_file,
 )
 from jobs.models import CaptureJob, JobStatus
 from tags.models import Tag
@@ -148,8 +149,10 @@ def serialize_snapshot(snapshot, *, include_text: bool = False, include_media: b
         return None
 
     image_files, video_files = get_capture_files(snapshot)
+    screenshot_file = get_snapshot_screenshot_file(snapshot)
     image_assets = [serialize_media_asset(asset, "image") for asset in image_files]
     video_assets = [serialize_media_asset(asset, "video") for asset in video_files]
+    screenshot_path = screenshot_file["path"] if screenshot_file else ""
     payload = {
         "id": snapshot.id,
         "snapshot_no": snapshot.snapshot_no,
@@ -166,8 +169,9 @@ def serialize_snapshot(snapshot, *, include_text: bool = False, include_media: b
         "category": snapshot.ai_category,
         "image_count": len(image_assets),
         "video_count": len(video_assets),
-        "screenshot_path": snapshot.screenshot_full_path,
-        "screenshot_url": storage_url_for_path(snapshot.screenshot_full_path),
+        "screenshot_path": screenshot_path,
+        "screenshot_url": storage_url_for_path(screenshot_path),
+        "screenshot_missing": bool(snapshot.screenshot_full_path and not screenshot_file),
     }
     if include_media:
         payload.update(
@@ -175,6 +179,7 @@ def serialize_snapshot(snapshot, *, include_text: bool = False, include_media: b
                 "image_assets": image_assets,
                 "video_assets": video_assets,
                 "media_assets": [*image_assets, *video_assets],
+                "screenshot_asset": serialize_media_asset(screenshot_file, "screenshot") if screenshot_file else None,
             }
         )
     if include_text:

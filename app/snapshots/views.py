@@ -3,6 +3,7 @@ from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_GET
 
 from resources.contexts import build_snapshot_detail_context
+from resources.services import get_capture_files, get_snapshot_screenshot_file
 from snapshots.models import Snapshot
 
 
@@ -29,15 +30,21 @@ def format_size(bytes_value: int) -> str:
 
 
 def build_artifact_cards(snapshot: Snapshot) -> list[dict]:
-    image_size = sum(int(asset.get("size_bytes", 0) or 0) for asset in snapshot.image_assets or [])
-    video_size = sum(int(asset.get("size_bytes", 0) or 0) for asset in snapshot.video_assets or [])
+    screenshot_file = get_snapshot_screenshot_file(snapshot)
+    image_files, video_files = get_capture_files(snapshot)
+    image_size = sum(int(asset.get("size_bytes", 0) or 0) for asset in image_files)
+    video_size = sum(int(asset.get("size_bytes", 0) or 0) for asset in video_files)
     return [
         {"label": "HTML", "count": 1 if snapshot.raw_html_path else 0, "meta": snapshot.raw_html_path and "保存済み" or "-"},
         {"label": "テキスト", "count": 1 if snapshot.raw_text_path else 0, "meta": snapshot.raw_text_path and "保存済み" or "-"},
         {"label": "JSON", "count": 1 if snapshot.raw_json_path else 0, "meta": snapshot.raw_json_path and "保存済み" or "-"},
-        {"label": "スクリーンショット", "count": 1 if snapshot.screenshot_full_path else 0, "meta": snapshot.screenshot_full_path and "保存済み" or "-"},
-        {"label": "画像", "count": snapshot.image_count, "meta": format_size(image_size)},
-        {"label": "動画", "count": snapshot.video_count, "meta": format_size(video_size)},
+        {
+            "label": "スクリーンショット",
+            "count": 1 if screenshot_file else 0,
+            "meta": "保存済み" if screenshot_file else ("ファイル欠落" if snapshot.screenshot_full_path else "-"),
+        },
+        {"label": "画像", "count": len(image_files), "meta": format_size(image_size)},
+        {"label": "動画", "count": len(video_files), "meta": format_size(video_size)},
     ]
 
 

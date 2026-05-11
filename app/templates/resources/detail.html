@@ -132,25 +132,18 @@
                     </div>
 
                     <div class="tab-panel is-active" data-tab-panel="translation">
-                        <div class="snapshot-focus">
-                            {% if resource.latest_snapshot.screenshot_full_path %}
-                                <a href="/{{ resource.latest_snapshot.screenshot_full_path }}" target="_blank" rel="noreferrer" class="snapshot-preview-card">
-                                    <img src="/{{ resource.latest_snapshot.screenshot_full_path }}" alt="Latest screenshot" class="screenshot-preview">
-                                </a>
-                            {% endif %}
-                            <div class="summary-stack">
-                                <div class="summary-block">
-                                    <h3>日本語翻訳</h3>
-                                    <p>{{ resource.latest_snapshot.ai_translation|default:"日本語翻訳はまだありません。" }}</p>
-                                </div>
-                                <div class="summary-block">
-                                    <h3>ページ情報</h3>
-                                    <ul class="bullet-list">
-                                        <li>ページタイトル: {{ resource.latest_snapshot.page_title|default:"-" }}</li>
-                                        <li>HTTPステータス: {{ resource.latest_snapshot.http_status|default:"-" }}</li>
-                                        <li>取得方法: {{ resource.latest_snapshot.get_fetch_method_display }}</li>
-                                    </ul>
-                                </div>
+                        <div class="summary-stack">
+                            <div class="summary-block">
+                                <h3>日本語翻訳</h3>
+                                <p>{{ resource.latest_snapshot.ai_translation|default:"日本語翻訳はまだありません。" }}</p>
+                            </div>
+                            <div class="summary-block">
+                                <h3>ページ情報</h3>
+                                <ul class="bullet-list">
+                                    <li>ページタイトル: {{ resource.latest_snapshot.page_title|default:"-" }}</li>
+                                    <li>HTTPステータス: {{ resource.latest_snapshot.http_status|default:"-" }}</li>
+                                    <li>取得方法: {{ resource.latest_snapshot.get_fetch_method_display }}</li>
+                                </ul>
                             </div>
                         </div>
                     </div>
@@ -160,16 +153,23 @@
                     </div>
 
                     <div class="tab-panel" data-tab-panel="images">
-                        {% if has_image_files %}
-                            <h3>保存した画像</h3>
+                        {% if has_image_panel_files %}
+                            <h3>保存した画像・スクリーンショット</h3>
                             <div class="media-grid">
+                                {% if screenshot_file %}
+                                    <a href="/{{ screenshot_file.path }}" target="_blank" rel="noreferrer" class="image-card image-card--screenshot">
+                                        <img src="/{{ screenshot_file.path }}" alt="Page screenshot">
+                                        <span class="image-card__meta">ページ全体スクリーンショット</span>
+                                    </a>
+                                {% endif %}
                                 {% for image in image_files %}
                                     <a href="/{{ image.path }}" target="_blank" rel="noreferrer" class="image-card">
                                         <img src="/{{ image.path }}" alt="Captured image {{ forloop.counter }}">
+                                        <span class="image-card__meta">ページ内画像 {{ forloop.counter }}</span>
                                     </a>
                                 {% endfor %}
                             </div>
-                        {% elif capture_mismatch %}
+                        {% elif image_capture_mismatch %}
                             <p class="empty-copy">保存済みファイルが見つかりません。再取得してください。</p>
                         {% else %}
                             <p class="empty-copy">保存済みの画像はありません。</p>
@@ -186,7 +186,7 @@
                                     </a>
                                 {% endfor %}
                             </div>
-                        {% elif capture_mismatch %}
+                        {% elif video_capture_mismatch %}
                             <p class="empty-copy">保存済みファイルが見つかりません。再取得してください。</p>
                         {% else %}
                             <p class="empty-copy">保存済みの動画はありません。</p>

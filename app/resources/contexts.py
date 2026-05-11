@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from resources.forms import ResourceFilterForm
 from resources.models import Resource, ReviewState
-from resources.services import get_capture_files
+from resources.services import get_capture_files, get_snapshot_screenshot_file
 from snapshots.models import Snapshot
 
 LIST_PAGE_SIZE = 10
@@ -36,26 +36,43 @@ def build_snapshot_payload_context(snapshot: Snapshot | None) -> dict:
 
 
 def build_snapshot_detail_context(snapshot: Snapshot) -> dict:
+    image_files, video_files = get_capture_files(snapshot)
+    screenshot_file = get_snapshot_screenshot_file(snapshot)
     return {
         "snapshot": snapshot,
+        "screenshot_file": screenshot_file,
+        "image_files": image_files,
+        "video_files": video_files,
+        "has_screenshot_file": bool(screenshot_file),
+        "has_image_files": bool(image_files),
+        "has_video_files": bool(video_files),
         **build_snapshot_payload_context(snapshot),
     }
 
 
 def build_resource_detail_context(resource) -> dict:
-    image_files, video_files = get_capture_files(resource.latest_snapshot)
+    snapshot = resource.latest_snapshot
+    image_files, video_files = get_capture_files(snapshot)
+    screenshot_file = get_snapshot_screenshot_file(snapshot)
+    expected_image_count = len(snapshot.image_assets or []) if snapshot is not None else 0
+    expected_video_count = len(snapshot.video_assets or []) if snapshot is not None else 0
+    missing_screenshot = bool(snapshot and snapshot.screenshot_full_path and not screenshot_file)
+    missing_image_files = expected_image_count > len(image_files)
+    missing_video_files = expected_video_count > len(video_files)
     return {
         "resource": resource,
         "snapshots": resource.snapshots.all()[:10],
-        "latest_snapshot_context": build_snapshot_payload_context(resource.latest_snapshot),
+        "latest_snapshot_context": build_snapshot_payload_context(snapshot),
+        "screenshot_file": screenshot_file,
         "image_files": image_files,
         "video_files": video_files,
+        "has_screenshot_file": bool(screenshot_file),
         "has_image_files": bool(image_files),
         "has_video_files": bool(video_files),
-        "capture_mismatch": (
-            (resource.capture_images and not image_files)
-            or (resource.capture_videos and not video_files)
-        ),
+        "has_image_panel_files": bool(screenshot_file or image_files),
+        "image_capture_mismatch": missing_screenshot or missing_image_files,
+        "video_capture_mismatch": missing_video_files,
+        "capture_mismatch": missing_screenshot or missing_image_files or missing_video_files,
     }
 
 

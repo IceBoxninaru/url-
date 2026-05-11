@@ -116,10 +116,12 @@
                                 <p class="section-subtitle">保存されたページ画像のプレビューです。</p>
                             </div>
                         </div>
-                        {% if snapshot.screenshot_full_path %}
-                            <a href="/{{ snapshot.screenshot_full_path }}" target="_blank" rel="noreferrer" class="snapshot-preview-card">
-                                <img src="/{{ snapshot.screenshot_full_path }}" alt="Snapshot screenshot" class="screenshot-preview">
+                        {% if screenshot_file %}
+                            <a href="/{{ screenshot_file.path }}" target="_blank" rel="noreferrer" class="snapshot-preview-card">
+                                <img src="/{{ screenshot_file.path }}" alt="Snapshot screenshot" class="screenshot-preview">
                             </a>
+                        {% elif snapshot.screenshot_full_path %}
+                            <p class="empty-copy">スクリーンショットの保存ファイルが見つかりません。</p>
                         {% else %}
                             <p class="empty-copy">スクリーンショットは保存されていません。</p>
                         {% endif %}
@@ -146,7 +148,7 @@
                             </div>
                             <div class="log-row">
                                 <span class="log-row__time">保存結果</span>
-                                <span>スクリーンショット {% if snapshot.screenshot_full_path %}1{% else %}0{% endif %} 件 / 画像 {{ snapshot.image_count }} 件 / 動画 {{ snapshot.video_count }} 件</span>
+                                <span>スクリーンショット {% if screenshot_file %}1{% else %}0{% endif %} 件 / 画像 {{ image_files|length }} 件 / 動画 {{ video_files|length }} 件</span>
                             </div>
                         </div>
                     </section>

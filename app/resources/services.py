@@ -294,6 +294,32 @@ def get_capture_files(snapshot: Snapshot | None) -> tuple[list[dict], list[dict]
         ),
     )
 
+
+def get_snapshot_screenshot_file(snapshot: Snapshot | None) -> dict | None:
+    if snapshot is None:
+        return None
+    path = (snapshot.screenshot_full_path or "").strip()
+    if not path:
+        return None
+    file_path, display_path = resolve_asset_file_path(
+        path,
+        settings.SCREENSHOT_STORAGE_ROOT,
+        resource_id=snapshot.resource_id,
+    )
+    if not file_path.exists() or not file_path.is_file():
+        return None
+    try:
+        size_bytes = file_path.stat().st_size
+    except OSError:
+        size_bytes = 0
+    return {
+        "source_url": snapshot.fetch_url,
+        "path": display_path or path,
+        "content_type": "image/png",
+        "size_bytes": size_bytes,
+    }
+
+
 def get_previous_snapshot(snapshot: Snapshot | None) -> Snapshot | None:
     if snapshot is None:
         return None

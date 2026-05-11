@@ -1420,6 +1420,51 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertContains(response, f"/storage/images/resource_{resource.id:04d}/{image_name}")
         self.assertFalse(response.context["capture_mismatch"])
 
+    def test_detail_displays_screenshot_in_image_tab_without_false_mismatch(self):
+        resource = Resource.objects.create(
+            original_url="https://x.com/example/status/1",
+            normalized_url="https://x.com/example/status/1",
+            domain="x.com",
+            title_manual="Screenshot Post",
+            capture_images=True,
+            capture_videos=False,
+        )
+        screenshot_name = "snapshot_0001_full.png"
+        screenshot_path = f"storage/screenshots/resource_{resource.id:04d}/{screenshot_name}"
+        snapshot = Snapshot.objects.create(
+            resource=resource,
+            snapshot_no=1,
+            fetch_url=resource.normalized_url,
+            fetch_method=FetchMethod.PLAYWRIGHT,
+            http_status=200,
+            page_title="Screenshot",
+            ai_translation="保存済みの翻訳です。",
+            screenshot_full_path=screenshot_path,
+        )
+        resource.latest_snapshot = snapshot
+        resource.save(update_fields=["latest_snapshot"])
+        screenshot_dir = self.storage_base / "screenshots" / f"resource_{resource.id:04d}"
+        screenshot_dir.mkdir(parents=True, exist_ok=True)
+        (screenshot_dir / screenshot_name).write_bytes(b"fake-screenshot")
+
+        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+            response = self.client.get(reverse("resources:detail", args=[resource.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["has_image_files"])
+        self.assertTrue(response.context["has_screenshot_file"])
+        self.assertTrue(response.context["has_image_panel_files"])
+        self.assertFalse(response.context["capture_mismatch"])
+        rendered = response.content.decode()
+        translation_panel = rendered.split('data-tab-panel="translation"', 1)[1].split(
+            'data-tab-panel="body"', 1
+        )[0]
+        image_panel = rendered.split('data-tab-panel="images"', 1)[1].split('data-tab-panel="videos"', 1)[0]
+        self.assertNotIn(screenshot_path, translation_panel)
+        self.assertIn(screenshot_path, image_panel)
+        self.assertIn("ページ全体スクリーンショット", image_panel)
+        self.assertNotContains(response, "保存済みファイルが見つかりません。再取得してください。")
+
     def test_detail_displays_only_latest_snapshot_images(self):
         resource = Resource.objects.create(
             original_url="https://example.com/repeated-image-post",

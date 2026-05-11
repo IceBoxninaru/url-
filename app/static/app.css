@@ -1495,6 +1495,18 @@ input[type="checkbox"] {
     border-radius: 12px;
 }
 
+.image-card--screenshot img {
+    object-position: top;
+}
+
+.image-card__meta {
+    display: block;
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
 .video-card video {
     width: 100%;
     aspect-ratio: 4 / 3;
