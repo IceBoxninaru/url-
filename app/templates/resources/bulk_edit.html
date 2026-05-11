@@ -176,6 +176,13 @@
                     {{ form.visibility_state }}
                     {{ form.visibility_state.errors }}
                 </label>
+                <div class="field-group field-group--full">
+                    <span class="field-label">{{ form.interest_labels.label }}</span>
+                    <div class="tag-selector-grid">
+                        {{ form.interest_labels }}
+                    </div>
+                    {{ form.interest_labels.errors }}
+                </div>
                 <label class="field-group field-group--full">
                     <span class="field-label">{{ form.tags.label }}</span>
                     {{ form.tags }}

@@ -7,7 +7,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from resources.forms import ResourceFilterForm
-from resources.models import InterestFeedback, Resource, ReviewState
+from resources.models import INTEREST_LABEL_CHOICES, InterestFeedback, Resource, ReviewState
 from resources.services import get_capture_files, get_snapshot_screenshot_file
 from snapshots.models import Snapshot
 
@@ -237,6 +237,7 @@ def build_resource_list_signature(resources) -> str:
             f"{resource.latest_snapshot_id or 0}:"
             f"{resource.search_only}:"
             f"{resource.interest_feedback}:"
+            f"{','.join(resource.interest_labels or [])}:"
             f"{resource.latest_translation}"
         )
         for resource in resources
@@ -309,6 +310,7 @@ def build_resource_list_context(
         "resource_signature": build_resource_list_signature(resource_list),
         "resource_fragment_url": reverse(fragment_url_name),
         "resource_poll_ms": 10000,
+        "interest_label_choices": INTEREST_LABEL_CHOICES,
     }
 
 
@@ -356,6 +358,8 @@ def build_ai_feedback_item(resource: Resource) -> dict:
         "domain": resource.domain,
         "feedback": resource.interest_feedback,
         "feedback_label": resource.get_interest_feedback_display(),
+        "interest_labels": resource.interest_labels or [],
+        "interest_label_names": resource.interest_label_names,
         "search_only": resource.search_only,
         "save_reason": resource.get_save_reason_display() if resource.save_reason else "",
         "next_action": resource.next_action,

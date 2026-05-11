@@ -19,6 +19,7 @@
 
 - resource_id: {{ item.id }}
 - feedback: {{ item.feedback_label }} ({{ item.feedback }})
+- interest_labels: {% if item.interest_label_names %}{{ item.interest_label_names|join:", " }}{% else %}-{% endif %}
 - url: {{ item.url }}
 - normalized_url: {{ item.normalized_url }}
 - domain: {{ item.domain }}

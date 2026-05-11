@@ -114,6 +114,8 @@
                 <dd>{{ item.id }}</dd>
                 <dt>feedback</dt>
                 <dd>{{ item.feedback_label }} ({{ item.feedback }})</dd>
+                <dt>interest_labels</dt>
+                <dd>{% if item.interest_label_names %}{{ item.interest_label_names|join:", " }}{% else %}-{% endif %}</dd>
                 <dt>url</dt>
                 <dd><a href="{{ item.url }}">{{ item.url }}</a></dd>
                 <dt>normalized_url</dt>

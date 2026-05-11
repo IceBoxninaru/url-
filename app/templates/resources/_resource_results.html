@@ -112,7 +112,42 @@
                                                 <span>興味なし</span>
                                             </button>
                                         </form>
+                                        <form method="post" action="{% url 'resources:interest_label' resource.id %}" class="interest-label-add-form" data-resource-action-form>
+                                            {% csrf_token %}
+                                            <input type="hidden" name="label_action" value="add">
+                                            <input type="hidden" name="next" value="{{ resource_action_next_url }}">
+                                            <label>
+                                                <span class="sr-only">興味ラベルを追加</span>
+                                                <select name="interest_label" class="interest-label-select" required>
+                                                    <option value="">ラベル追加</option>
+                                                    {% for value, label in interest_label_choices %}
+                                                        {% if value not in resource.interest_labels %}
+                                                            <option value="{{ value }}">{{ label }}</option>
+                                                        {% endif %}
+                                                    {% endfor %}
+                                                </select>
+                                            </label>
+                                            <button type="submit" class="button button--soft button--compact interest-label-add-button">追加</button>
+                                        </form>
                                     </div>
+                                    {% if resource.interest_label_names %}
+                                        <div class="tag-chip-list resource-table__status-row">
+                                            {% for value, label in interest_label_choices %}
+                                                {% if value in resource.interest_labels %}
+                                                    <form method="post" action="{% url 'resources:interest_label' resource.id %}" class="interest-label-remove-form" data-resource-action-form>
+                                                        {% csrf_token %}
+                                                        <input type="hidden" name="label_action" value="remove">
+                                                        <input type="hidden" name="interest_label" value="{{ value }}">
+                                                        <input type="hidden" name="next" value="{{ resource_action_next_url }}">
+                                                        <button type="submit" class="tag-chip tag-chip--soft interest-label-chip" title="{{ label }} を外す">
+                                                            <span>{{ label }}</span>
+                                                            <span aria-hidden="true">×</span>
+                                                        </button>
+                                                    </form>
+                                                {% endif %}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
                                 </td>
                                 <td class="resource-table__cell resource-table__cell--tags" data-label="タグ">
                                     <div class="tag-chip-list">

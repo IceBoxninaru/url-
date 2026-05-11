@@ -17,7 +17,7 @@ from resources.contexts import (
     paginate_queryset,
 )
 from resources.forms import ResourceBulkEditForm, ResourceForm
-from resources.models import InterestFeedback, Resource
+from resources.models import INTEREST_LABEL_CHOICES, InterestFeedback, Resource
 from resources.services import (
     check_resource_link_status,
     delete_resource_with_artifacts,
@@ -201,6 +201,8 @@ def serialize_resource(resource: Resource, *, detail: bool = False) -> dict:
         "search_only": resource.search_only,
         "interest_feedback": resource.interest_feedback,
         "interest_feedback_label": resource.get_interest_feedback_display(),
+        "interest_labels": resource.interest_labels or [],
+        "interest_label_names": resource.interest_label_names,
         "save_reason": resource.save_reason,
         "save_reason_label": resource.get_save_reason_display(),
         "next_action": resource.next_action,
@@ -369,6 +371,31 @@ def resource_interest_feedback(request, pk: int):
 
     resource.interest_feedback = InterestFeedback.NONE if resource.interest_feedback == feedback else feedback
     resource.save(update_fields=["interest_feedback", "updated_at"])
+    if wants_json_response(request):
+        return JsonResponse({"ok": True, "resource": serialize_resource(resource)})
+    return redirect(next_url)
+
+
+@require_POST
+def resource_interest_label(request, pk: int):
+    resource = get_object_or_404(Resource, pk=pk)
+    next_url = normalize_next_url(request.POST.get("next", ""))
+    label = (request.POST.get("interest_label") or "").strip()
+    action = (request.POST.get("label_action") or "add").strip()
+    valid_labels = {value for value, _ in INTEREST_LABEL_CHOICES}
+    if label not in valid_labels or action not in {"add", "remove"}:
+        if wants_json_response(request):
+            return JsonResponse({"ok": False, "error": "Invalid interest label."}, status=400)
+        messages.error(request, "興味ラベルの更新に失敗しました。")
+        return redirect(next_url)
+
+    labels = list(resource.interest_labels or [])
+    if action == "add" and label not in labels:
+        labels.append(label)
+    elif action == "remove":
+        labels = [current for current in labels if current != label]
+    resource.interest_labels = labels
+    resource.save(update_fields=["interest_labels", "updated_at"])
     if wants_json_response(request):
         return JsonResponse({"ok": True, "resource": serialize_resource(resource)})
     return redirect(next_url)

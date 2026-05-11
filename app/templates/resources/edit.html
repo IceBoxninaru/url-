@@ -109,6 +109,17 @@
                 </label>
 
                 <div class="field-group field-group--full">
+                    <span class="field-label">{{ form.interest_labels.label }}</span>
+                    <div class="tag-selector-grid">
+                        {{ form.interest_labels }}
+                    </div>
+                    {% if form.interest_labels.help_text %}
+                        <span class="field-help">{{ form.interest_labels.help_text }}</span>
+                    {% endif %}
+                    {{ form.interest_labels.errors }}
+                </div>
+
+                <div class="field-group field-group--full">
                     <span class="field-label">{{ form.tags.label }}</span>
                     <div class="tag-selector-grid">
                         {{ form.tags }}

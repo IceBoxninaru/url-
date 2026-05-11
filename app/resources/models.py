@@ -38,6 +38,22 @@ class InterestFeedback(models.TextChoices):
     NOT_INTERESTED = "not_interested", "興味なし"
 
 
+INTEREST_LABEL_CHOICES = [
+    ("later", "あとで見る"),
+    ("reference", "実装参考"),
+    ("idea", "アイデア"),
+    ("compare", "比較したい"),
+    ("deep_dive", "深掘り候補"),
+    ("known", "既知"),
+    ("shallow", "浅い"),
+    ("promotional", "宣伝っぽい"),
+    ("off_topic", "テーマ外"),
+    ("duplicate", "重複"),
+    ("not_now", "今は不要"),
+    ("blocked", "取得失敗/ログイン壁"),
+]
+
+
 class SaveReason(models.TextChoices):
     READ_LATER = "後で読む", "後で読む"
     LIKELY_TO_DISAPPEAR = "消えそう", "消えそう"
@@ -176,6 +192,7 @@ class Resource(models.Model):
         default=InterestFeedback.NONE,
         db_index=True,
     )
+    interest_labels = models.JSONField(default=list, blank=True)
     review_state = models.CharField(
         max_length=32,
         choices=ReviewState.choices,
@@ -259,6 +276,11 @@ class Resource(models.Model):
 
     def get_save_reason_display(self) -> str:
         return dict(SaveReason.choices).get(self.save_reason, self.save_reason)
+
+    @property
+    def interest_label_names(self) -> list[str]:
+        label_map = dict(INTEREST_LABEL_CHOICES)
+        return [label_map.get(label, label) for label in self.interest_labels or []]
 
     def update_domain_from_url(self):
         parsed = urlparse(self.normalized_url)

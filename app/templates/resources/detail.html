@@ -105,6 +105,18 @@
                     </div>
                 </div>
             </div>
+            <div class="meta-item">
+                <span class="meta-item__label">興味ラベル</span>
+                <div class="meta-item__value">
+                    <div class="tag-chip-list">
+                        {% for label in resource.interest_label_names %}
+                            <span class="tag-chip tag-chip--soft">{{ label }}</span>
+                        {% empty %}
+                            <span class="muted">ラベルなし</span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
             <div class="meta-item meta-item--full">
                 <span class="meta-item__label">メモ</span>
                 <div class="meta-item__value">{{ resource.note|default:"-"|linebreaksbr }}</div>

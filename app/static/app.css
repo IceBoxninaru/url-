@@ -1275,6 +1275,47 @@ input[type="checkbox"] {
     margin: 0;
 }
 
+.interest-label-add-form {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.interest-label-add-form label {
+    min-width: 118px;
+}
+
+.interest-label-select {
+    min-height: 34px;
+    padding: 0 28px 0 10px;
+    border-radius: 11px;
+    font-size: 0.82rem;
+}
+
+.interest-label-add-button {
+    padding-inline: 10px;
+}
+
+.interest-label-remove-form {
+    margin: 0;
+}
+
+.interest-label-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--panel-muted);
+    color: var(--text);
+    box-shadow: none;
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
 .interest-toggle {
     min-height: 32px;
     padding-inline: 10px;

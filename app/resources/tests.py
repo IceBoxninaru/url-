@@ -346,6 +346,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         response = self.client.get(reverse("resources:create"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'name="new_tags"', html=False)
+        self.assertContains(response, 'name="interest_labels"', html=False)
         self.assertEqual(response.context["form"].fields["new_tags"].widget.__class__.__name__, "Textarea")
 
     def test_api_recent_resources_returns_latest_visible_urls(self):
@@ -506,6 +507,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
                 "favorite": "on",
                 "capture_images": "on",
                 "capture_videos": "on",
+                "interest_labels": ["reference", "deep_dive"],
                 "tags": [self.tag_a.id, self.tag_b.id],
             },
         )
@@ -520,6 +522,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertTrue(resource.capture_images)
         self.assertTrue(resource.capture_videos)
         self.assertFalse(resource.search_only)
+        self.assertEqual(resource.interest_labels, ["reference", "deep_dive"])
         self.assertEqual(resource.tags.count(), 2)
         job = CaptureJob.objects.get()
         self.assertEqual(job.job_type, JobType.CAPTURE)
@@ -824,6 +827,9 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertContains(response, "興味あり")
         self.assertContains(response, "興味なし")
         self.assertContains(response, reverse("resources:interest_feedback", args=[ai_resource.id]))
+        self.assertContains(response, reverse("resources:interest_label", args=[ai_resource.id]))
+        self.assertContains(response, 'name="interest_label"', html=False)
+        self.assertContains(response, "ラベル追加")
         self.assertNotContains(response, "Visible Entry")
         self.assertNotContains(response, 'name="domain"', html=False)
         self.assertNotContains(response, 'name="status"', html=False)
@@ -1022,6 +1028,92 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         ai_resource.refresh_from_db()
         self.assertEqual(ai_resource.interest_feedback, InterestFeedback.NONE)
 
+    def test_interest_label_adds_label_from_ai_search_list(self):
+        ai_resource = Resource.objects.create(
+            original_url="https://example.com/label-ai",
+            normalized_url="https://example.com/label-ai",
+            domain="example.com",
+            title_manual="Label AI Entry",
+            search_only=True,
+        )
+
+        response = self.client.post(
+            reverse("resources:interest_label", args=[ai_resource.id]),
+            {
+                "label_action": "add",
+                "interest_label": "reference",
+                "next": reverse("resources:ai_search_list"),
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], reverse("resources:ai_search_list"))
+        ai_resource.refresh_from_db()
+        self.assertEqual(ai_resource.interest_labels, ["reference"])
+
+    def test_interest_label_fetch_adds_and_removes_label(self):
+        ai_resource = Resource.objects.create(
+            original_url="https://example.com/label-fetch-ai",
+            normalized_url="https://example.com/label-fetch-ai",
+            domain="example.com",
+            title_manual="Label Fetch AI Entry",
+            search_only=True,
+            interest_labels=["reference"],
+        )
+
+        add_response = self.client.post(
+            reverse("resources:interest_label", args=[ai_resource.id]),
+            {
+                "label_action": "add",
+                "interest_label": "deep_dive",
+                "next": reverse("resources:ai_search_list"),
+            },
+            HTTP_X_REQUESTED_WITH="fetch",
+        )
+
+        self.assertEqual(add_response.status_code, 200)
+        add_payload = add_response.json()
+        self.assertEqual(add_payload["resource"]["interest_labels"], ["reference", "deep_dive"])
+
+        remove_response = self.client.post(
+            reverse("resources:interest_label", args=[ai_resource.id]),
+            {
+                "label_action": "remove",
+                "interest_label": "reference",
+                "next": reverse("resources:ai_search_list"),
+            },
+            HTTP_X_REQUESTED_WITH="fetch",
+        )
+
+        self.assertEqual(remove_response.status_code, 200)
+        remove_payload = remove_response.json()
+        self.assertEqual(remove_payload["resource"]["interest_labels"], ["deep_dive"])
+        ai_resource.refresh_from_db()
+        self.assertEqual(ai_resource.interest_labels, ["deep_dive"])
+
+    def test_interest_label_rejects_invalid_label(self):
+        ai_resource = Resource.objects.create(
+            original_url="https://example.com/label-invalid-ai",
+            normalized_url="https://example.com/label-invalid-ai",
+            domain="example.com",
+            title_manual="Label Invalid AI Entry",
+            search_only=True,
+        )
+
+        response = self.client.post(
+            reverse("resources:interest_label", args=[ai_resource.id]),
+            {
+                "label_action": "add",
+                "interest_label": "invalid",
+                "next": reverse("resources:ai_search_list"),
+            },
+            HTTP_X_REQUESTED_WITH="fetch",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        ai_resource.refresh_from_db()
+        self.assertEqual(ai_resource.interest_labels, [])
+
     def test_api_resource_detail_includes_interest_feedback(self):
         ai_resource = Resource.objects.create(
             original_url="https://example.com/interested-api",
@@ -1030,6 +1122,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             title_manual="Interested API Entry",
             search_only=True,
             interest_feedback=InterestFeedback.INTERESTED,
+            interest_labels=["reference", "deep_dive"],
         )
 
         response = self.client.get(reverse("resources:api_detail", args=[ai_resource.id]))
@@ -1038,6 +1131,8 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         payload = response.json()
         self.assertEqual(payload["interest_feedback"], InterestFeedback.INTERESTED)
         self.assertEqual(payload["interest_feedback_label"], "興味あり")
+        self.assertEqual(payload["interest_labels"], ["reference", "deep_dive"])
+        self.assertEqual(payload["interest_label_names"], ["実装参考", "深掘り候補"])
 
     def test_ai_interested_page_is_machine_readable_and_filters_interested_resources(self):
         interested = Resource.objects.create(
@@ -1049,6 +1144,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             next_action="関連実装を探す",
             search_only=True,
             interest_feedback=InterestFeedback.INTERESTED,
+            interest_labels=["reference", "deep_dive"],
         )
         interested.tags.add(self.tag_a)
         snapshot = Snapshot.objects.create(
@@ -1088,6 +1184,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertContains(response, 'data-feedback="interested"')
         self.assertContains(response, "Interested Reader Entry")
         self.assertContains(response, "https://example.com/interested-reader")
+        self.assertContains(response, "実装参考, 深掘り候補")
         self.assertContains(response, "alpha")
         self.assertContains(response, "一次要約です。")
         self.assertContains(response, "日本語翻訳です。")
@@ -1106,6 +1203,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             title_manual="Not Interested Reader Entry",
             note="宣伝寄りなので次回は避けたい",
             interest_feedback=InterestFeedback.NOT_INTERESTED,
+            interest_labels=["promotional", "not_now"],
         )
         Resource.objects.create(
             original_url="https://example.com/interested-reader",
@@ -1123,6 +1221,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertContains(response, 'data-feedback="not_interested"')
         self.assertContains(response, "AI読取用: 興味なしURL")
         self.assertContains(response, "Not Interested Reader Entry")
+        self.assertContains(response, "宣伝っぽい, 今は不要")
         self.assertContains(response, "宣伝寄りなので次回は避けたい")
         self.assertContains(response, "latest_snapshot: none")
         self.assertNotContains(response, "Positive Reader Entry")
@@ -1155,6 +1254,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             title_manual="Interested Markdown Entry",
             note="Markdownにも保存する",
             interest_feedback=InterestFeedback.INTERESTED,
+            interest_labels=["reference"],
         )
         snapshot = Snapshot.objects.create(
             resource=interested,
@@ -1179,6 +1279,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertIn("# AI読取用: 興味ありURL", content)
         self.assertIn("## 1. Interested Markdown Entry", content)
         self.assertIn("- feedback: 興味あり (interested)", content)
+        self.assertIn("- interest_labels: 実装参考", content)
         self.assertIn("- url: https://example.com/interested-md", content)
         self.assertIn("Markdownにも保存する", content)
         self.assertIn("Markdown向け要約です。", content)
@@ -1195,6 +1296,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             title_manual="Not Interested Markdown Entry",
             note="Markdown除外メモ",
             interest_feedback=InterestFeedback.NOT_INTERESTED,
+            interest_labels=["off_topic", "duplicate"],
         )
         Resource.objects.create(
             original_url="https://example.com/interested-md-hidden",
@@ -1213,6 +1315,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertIn("# AI読取用: 興味なしURL", content)
         self.assertIn("## 1. Not Interested Markdown Entry", content)
         self.assertIn("- feedback: 興味なし (not_interested)", content)
+        self.assertIn("- interest_labels: テーマ外, 重複", content)
         self.assertIn("Markdown除外メモ", content)
         self.assertIn("latest_snapshot: none", content)
         self.assertNotIn("Hidden Markdown Entry", content)
@@ -1321,6 +1424,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
                 "recheck_at": "2026-05-02",
                 "favorite_state": "on",
                 "visibility_state": "search_only",
+                "interest_labels": ["compare", "idea"],
                 "tags": [self.tag_a.id],
                 "new_tags": "gamma",
                 "next": reverse("resources:list"),
@@ -1339,6 +1443,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             self.assertEqual(resource.recheck_at, date(2026, 5, 2))
             self.assertTrue(resource.favorite)
             self.assertTrue(resource.search_only)
+            self.assertEqual(resource.interest_labels, ["compare", "idea"])
             self.assertEqual(
                 list(resource.tags.order_by("name").values_list("name", flat=True)),
                 ["alpha", "gamma"],
@@ -1350,6 +1455,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertIsNone(resource_c.recheck_at)
         self.assertFalse(resource_c.favorite)
         self.assertFalse(resource_c.search_only)
+        self.assertEqual(resource_c.interest_labels, [])
         self.assertFalse(resource_c.tags.exists())
 
     def test_bulk_edit_page_shows_selected_resources(self):

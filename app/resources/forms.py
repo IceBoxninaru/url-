@@ -3,7 +3,7 @@ from __future__ import annotations
 from django import forms
 from django.db import transaction
 
-from resources.models import Resource, ResourceStatus, ReviewState, SaveReason
+from resources.models import INTEREST_LABEL_CHOICES, Resource, ResourceStatus, ReviewState, SaveReason
 from resources.services import normalize_url
 from resources.tagging import (
     ordered_tags_queryset,
@@ -48,6 +48,12 @@ class TagSelectionFormMixin:
 
 
 class ResourceForm(TagSelectionFormMixin, forms.ModelForm):
+    interest_labels = forms.MultipleChoiceField(
+        required=False,
+        choices=INTEREST_LABEL_CHOICES,
+        label="興味ラベル",
+        widget=forms.CheckboxSelectMultiple,
+    )
     save_reason = forms.ChoiceField(
         required=False,
         choices=[],
@@ -95,6 +101,7 @@ class ResourceForm(TagSelectionFormMixin, forms.ModelForm):
             "next_action",
             "recheck_at",
             "note",
+            "interest_labels",
             "favorite",
             "search_only",
             "capture_images",
@@ -130,6 +137,7 @@ class ResourceForm(TagSelectionFormMixin, forms.ModelForm):
         self.fields["review_state"].label = "見直し状態"
         self.fields["review_state"].required = False
         self.fields["review_state"].initial = ReviewState.NONE
+        self.fields["interest_labels"].help_text = "理由を文章で書かず、近いものを選ぶだけで整理できます。"
         self.fields["save_reason"].help_text = "何のために保存したかを整理して持てます。"
         self.fields["next_action"].help_text = "次に何をするURLかを短く書いておけます。"
         self.fields["recheck_at"].help_text = "あとで見返したい日を設定できます。"
@@ -141,6 +149,7 @@ class ResourceForm(TagSelectionFormMixin, forms.ModelForm):
                 "next_action",
                 "recheck_at",
                 "note",
+                "interest_labels",
                 "review_state",
                 "favorite",
                 "search_only",
@@ -152,6 +161,7 @@ class ResourceForm(TagSelectionFormMixin, forms.ModelForm):
         )
         if self.instance.pk:
             self.initial["tags"] = self.instance.tags.all()
+            self.initial["interest_labels"] = self.instance.interest_labels or []
             if self.instance.save_reason:
                 self.initial["save_reason"] = self.instance.save_reason
             for template_value, _ in NOTE_TEMPLATE_CHOICES:
@@ -195,6 +205,7 @@ class ResourceForm(TagSelectionFormMixin, forms.ModelForm):
         resource.normalized_url = self.cleaned_normalized_url
         resource.update_domain_from_url()
         resource.review_state = self.cleaned_data.get("review_state") or ReviewState.NONE
+        resource.interest_labels = list(self.cleaned_data.get("interest_labels") or [])
         resource.save_reason = (self.cleaned_data.get("save_reason") or "").strip()
         resource.next_action = (self.cleaned_data.get("next_action") or "").strip()
         resource.recheck_at = self.cleaned_data.get("recheck_at")
@@ -304,6 +315,12 @@ class ResourceBulkEditForm(TagSelectionFormMixin, forms.Form):
         ],
         label="一覧表示",
     )
+    interest_labels = forms.MultipleChoiceField(
+        required=False,
+        choices=INTEREST_LABEL_CHOICES,
+        label="興味ラベルを追加",
+        widget=forms.CheckboxSelectMultiple,
+    )
     tags = forms.ModelMultipleChoiceField(
         queryset=Tag.objects.none(),
         required=False,
@@ -340,6 +357,7 @@ class ResourceBulkEditForm(TagSelectionFormMixin, forms.Form):
                 cleaned_data.get("clear_recheck_at"),
                 cleaned_data.get("favorite_state"),
                 cleaned_data.get("visibility_state"),
+                cleaned_data.get("interest_labels"),
                 cleaned_data.get("tags"),
                 cleaned_data.get("new_tags"),
             ]
@@ -358,6 +376,7 @@ class ResourceBulkEditForm(TagSelectionFormMixin, forms.Form):
         clear_recheck_at = self.cleaned_data.get("clear_recheck_at") or False
         favorite_state = self.cleaned_data.get("favorite_state") or ""
         visibility_state = self.cleaned_data.get("visibility_state") or ""
+        interest_labels = list(self.cleaned_data.get("interest_labels") or [])
 
         with transaction.atomic():
             for resource in selected_resources:
@@ -391,6 +410,15 @@ class ResourceBulkEditForm(TagSelectionFormMixin, forms.Form):
                     update_fields.append("search_only")
                 if update_fields:
                     resource.save(update_fields=[*dict.fromkeys(update_fields), "updated_at"])
+                if interest_labels:
+                    current_labels = list(resource.interest_labels or [])
+                    merged_labels = [*current_labels]
+                    for label in interest_labels:
+                        if label not in merged_labels:
+                            merged_labels.append(label)
+                    if merged_labels != current_labels:
+                        resource.interest_labels = merged_labels
+                        resource.save(update_fields=["interest_labels", "updated_at"])
                 if tags_to_add:
                     resource.tags.add(*tags_to_add)
                     if not update_fields:
