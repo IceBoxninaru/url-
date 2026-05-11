@@ -264,11 +264,13 @@ def build_resource_list_context(
 ) -> dict:
     filter_form = ResourceFilterForm(request.GET)
     resources = Resource.objects.all()
+    selected_tags = []
     if filter_form.is_valid():
+        selected_tags = list(filter_form.cleaned_data.get("tags") or [])
         resources = resources.apply_filters(
             query=filter_form.cleaned_data.get("q") or "",
             domain=filter_form.cleaned_data.get("domain") or "",
-            tag_ids=[tag.id for tag in filter_form.cleaned_data.get("tags") or []],
+            tag_ids=[tag.id for tag in selected_tags],
             favorite_only=filter_form.cleaned_data.get("favorite_only") or False,
             status=filter_form.cleaned_data.get("status") or "",
             review_state=filter_form.cleaned_data.get("review_state") or "",
@@ -300,6 +302,7 @@ def build_resource_list_context(
         "list_form_action_url": reverse(clear_url_name),
         "list_clear_url": reverse(clear_url_name),
         "filter_form": filter_form,
+        "selected_tag_count": len(selected_tags),
         "resources": resource_list,
         "resource_action_next_url": build_resource_action_next_url(request, clear_url_name),
         "page_obj": page_obj,

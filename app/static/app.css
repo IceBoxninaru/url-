@@ -933,6 +933,18 @@ input[type="checkbox"] {
     font-weight: 700;
 }
 
+.filter-details__summary {
+    align-items: center;
+    display: inline-flex;
+    gap: 10px;
+}
+
+.filter-details__state {
+    color: #8290a3;
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
 .filter-details__body {
     margin-top: 12px;
 }

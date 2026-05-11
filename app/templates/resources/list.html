@@ -34,12 +34,19 @@
                     </label>
                     <button type="submit" class="button button--primary">絞り込む</button>
                 </div>
-                <label class="field-group field-group--full">
-                    <span class="field-label">タグ</span>
-                    <div class="tag-selector-grid">
+                <details class="filter-details filter-details--ai-search" {% if selected_tag_count %}open{% endif %}>
+                    <summary class="filter-details__summary">
+                        <span>タグで絞り込む</span>
+                        {% if selected_tag_count %}
+                            <span class="tone-chip tone-chip--neutral">{{ selected_tag_count }} 件選択中</span>
+                        {% else %}
+                            <span class="filter-details__state">未選択</span>
+                        {% endif %}
+                    </summary>
+                    <div class="tag-selector-grid filter-details__body">
                         {{ filter_form.tags }}
                     </div>
-                </label>
+                </details>
             {% else %}
                 <div class="filter-grid filter-grid--compact">
                     <label class="field-group field-group--wide">

@@ -830,6 +830,9 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertContains(response, reverse("resources:interest_label", args=[ai_resource.id]))
         self.assertContains(response, 'name="interest_label"', html=False)
         self.assertContains(response, "ラベル追加")
+        self.assertEqual(response.context["selected_tag_count"], 0)
+        self.assertContains(response, "タグで絞り込む")
+        self.assertContains(response, "未選択")
         self.assertNotContains(response, "Visible Entry")
         self.assertNotContains(response, 'name="domain"', html=False)
         self.assertNotContains(response, 'name="status"', html=False)
@@ -837,6 +840,33 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertNotContains(response, 'name="save_reason"', html=False)
         self.assertNotContains(response, 'name="favorite_only"', html=False)
         self.assertNotContains(response, 'name="recheck_due_only"', html=False)
+
+    def test_ai_search_list_tag_filter_opens_when_tags_are_selected(self):
+        ai_resource = Resource.objects.create(
+            original_url="https://example.com/tagged-ai",
+            normalized_url="https://example.com/tagged-ai",
+            domain="example.com",
+            title_manual="Tagged AI Entry",
+            search_only=True,
+        )
+        ai_resource.tags.add(self.tag_a)
+        other_resource = Resource.objects.create(
+            original_url="https://example.com/other-ai",
+            normalized_url="https://example.com/other-ai",
+            domain="example.com",
+            title_manual="Other AI Entry",
+            search_only=True,
+        )
+        other_resource.tags.add(self.tag_b)
+
+        response = self.client.get(reverse("resources:ai_search_list"), {"tags": [self.tag_a.id]})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context["resources"]), [ai_resource])
+        self.assertEqual(response.context["selected_tag_count"], 1)
+        self.assertContains(response, "1 件選択中")
+        self.assertContains(response, '<details class="filter-details filter-details--ai-search" open>', html=False)
+        self.assertNotContains(response, "Other AI Entry")
 
     def test_ai_search_list_query_stays_in_search_only_scope(self):
         Resource.objects.create(
