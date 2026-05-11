@@ -36,6 +36,7 @@
                 </div>
                 <details class="filter-details filter-details--ai-search" {% if selected_tag_count %}open{% endif %}>
                     <summary class="filter-details__summary">
+                        <span class="filter-details__caret" aria-hidden="true"></span>
                         <span>タグで絞り込む</span>
                         {% if selected_tag_count %}
                             <span class="tone-chip tone-chip--neutral">{{ selected_tag_count }} 件選択中</span>

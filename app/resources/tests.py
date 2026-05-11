@@ -833,6 +833,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(response.context["selected_tag_count"], 0)
         self.assertContains(response, "タグで絞り込む")
         self.assertContains(response, "未選択")
+        self.assertContains(response, "filter-details__caret")
         self.assertNotContains(response, "Visible Entry")
         self.assertNotContains(response, 'name="domain"', html=False)
         self.assertNotContains(response, 'name="status"', html=False)
