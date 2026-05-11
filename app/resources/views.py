@@ -1,5 +1,5 @@
 from django.contrib import messages
-from django.http import HttpResponseNotAllowed, JsonResponse, QueryDict
+from django.http import HttpResponse, HttpResponseNotAllowed, JsonResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -8,6 +8,7 @@ from django.views.decorators.http import require_GET, require_POST, require_http
 
 from resources.contexts import (
     BULK_EDIT_PAGE_SIZE,
+    build_ai_feedback_page_context,
     build_ai_search_resource_list_context,
     build_dashboard_context,
     build_pagination_context,
@@ -316,6 +317,42 @@ def ai_search_resource_list_fragment(request):
             "count": context["resource_count"],
         }
     )
+
+
+@require_GET
+def ai_interested_page(request):
+    return render(
+        request,
+        "resources/ai_feedback.html",
+        build_ai_feedback_page_context(request, InterestFeedback.INTERESTED),
+    )
+
+
+@require_GET
+def ai_not_interested_page(request):
+    return render(
+        request,
+        "resources/ai_feedback.html",
+        build_ai_feedback_page_context(request, InterestFeedback.NOT_INTERESTED),
+    )
+
+
+def render_ai_feedback_markdown(request, feedback: str, filename: str) -> HttpResponse:
+    context = build_ai_feedback_page_context(request, feedback)
+    content = render_to_string("resources/ai_feedback.md", context, request=request)
+    response = HttpResponse(content, content_type="text/markdown; charset=utf-8")
+    response["Content-Disposition"] = f'inline; filename="{filename}"'
+    return response
+
+
+@require_GET
+def ai_interested_markdown(request):
+    return render_ai_feedback_markdown(request, InterestFeedback.INTERESTED, "interested-urls.md")
+
+
+@require_GET
+def ai_not_interested_markdown(request):
+    return render_ai_feedback_markdown(request, InterestFeedback.NOT_INTERESTED, "not-interested-urls.md")
 
 
 @require_POST

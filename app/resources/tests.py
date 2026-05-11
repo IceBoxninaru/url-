@@ -1039,6 +1039,196 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(payload["interest_feedback"], InterestFeedback.INTERESTED)
         self.assertEqual(payload["interest_feedback_label"], "興味あり")
 
+    def test_ai_interested_page_is_machine_readable_and_filters_interested_resources(self):
+        interested = Resource.objects.create(
+            original_url="https://example.com/interested-reader",
+            normalized_url="https://example.com/interested-reader",
+            domain="example.com",
+            title_manual="Interested Reader Entry",
+            note="興味あり理由メモ",
+            next_action="関連実装を探す",
+            search_only=True,
+            interest_feedback=InterestFeedback.INTERESTED,
+        )
+        interested.tags.add(self.tag_a)
+        snapshot = Snapshot.objects.create(
+            resource=interested,
+            snapshot_no=1,
+            fetch_url=interested.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            page_title="Interested Page Title",
+            extracted_text="本文抜粋としてAIが読むテキストです。",
+            ai_summary="一次要約です。",
+            ai_translation="日本語翻訳です。",
+            ai_category="documentation",
+        )
+        interested.latest_snapshot = snapshot
+        interested.save(update_fields=["latest_snapshot"])
+        Resource.objects.create(
+            original_url="https://example.com/not-reader",
+            normalized_url="https://example.com/not-reader",
+            domain="example.com",
+            title_manual="Not Reader Entry",
+            interest_feedback=InterestFeedback.NOT_INTERESTED,
+        )
+        Resource.objects.create(
+            original_url="https://example.com/none-reader",
+            normalized_url="https://example.com/none-reader",
+            domain="example.com",
+            title_manual="None Reader Entry",
+        )
+
+        response = self.client.get(reverse("resources:ai_interested"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["feedback"], InterestFeedback.INTERESTED)
+        self.assertEqual(response.context["total_count"], 1)
+        self.assertContains(response, 'data-ai-reader-page="interest-feedback"')
+        self.assertContains(response, 'data-feedback="interested"')
+        self.assertContains(response, "Interested Reader Entry")
+        self.assertContains(response, "https://example.com/interested-reader")
+        self.assertContains(response, "alpha")
+        self.assertContains(response, "一次要約です。")
+        self.assertContains(response, "日本語翻訳です。")
+        self.assertContains(response, "本文抜粋としてAIが読むテキストです。")
+        self.assertNotContains(response, "Not Reader Entry")
+        self.assertNotContains(response, "None Reader Entry")
+        self.assertContains(response, reverse("resources:ai_interested_markdown"))
+        self.assertNotContains(response, "app-sidebar")
+        self.assertNotContains(response, "URL登録")
+
+    def test_ai_not_interested_page_is_machine_readable_and_filters_not_interested_resources(self):
+        not_interested = Resource.objects.create(
+            original_url="https://example.com/not-interested-reader",
+            normalized_url="https://example.com/not-interested-reader",
+            domain="example.com",
+            title_manual="Not Interested Reader Entry",
+            note="宣伝寄りなので次回は避けたい",
+            interest_feedback=InterestFeedback.NOT_INTERESTED,
+        )
+        Resource.objects.create(
+            original_url="https://example.com/interested-reader",
+            normalized_url="https://example.com/interested-reader",
+            domain="example.com",
+            title_manual="Positive Reader Entry",
+            interest_feedback=InterestFeedback.INTERESTED,
+        )
+
+        response = self.client.get(reverse("resources:ai_not_interested"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["feedback"], InterestFeedback.NOT_INTERESTED)
+        self.assertEqual(response.context["total_count"], 1)
+        self.assertContains(response, 'data-feedback="not_interested"')
+        self.assertContains(response, "AI読取用: 興味なしURL")
+        self.assertContains(response, "Not Interested Reader Entry")
+        self.assertContains(response, "宣伝寄りなので次回は避けたい")
+        self.assertContains(response, "latest_snapshot: none")
+        self.assertNotContains(response, "Positive Reader Entry")
+        self.assertContains(response, reverse("resources:ai_interested"))
+        self.assertContains(response, reverse("resources:ai_not_interested"))
+        self.assertContains(response, reverse("resources:ai_not_interested_markdown"))
+
+    def test_ai_feedback_page_limit_is_capped(self):
+        for index in range(3):
+            Resource.objects.create(
+                original_url=f"https://example.com/interested-limit-{index}",
+                normalized_url=f"https://example.com/interested-limit-{index}",
+                domain="example.com",
+                title_manual=f"Interested Limit {index}",
+                interest_feedback=InterestFeedback.INTERESTED,
+            )
+
+        response = self.client.get(reverse("resources:ai_interested"), {"limit": 2})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["total_count"], 3)
+        self.assertEqual(response.context["shown_count"], 2)
+        self.assertContains(response, "shown_count=2")
+
+    def test_ai_interested_markdown_exports_same_machine_readable_content(self):
+        interested = Resource.objects.create(
+            original_url="https://example.com/interested-md",
+            normalized_url="https://example.com/interested-md",
+            domain="example.com",
+            title_manual="Interested Markdown Entry",
+            note="Markdownにも保存する",
+            interest_feedback=InterestFeedback.INTERESTED,
+        )
+        snapshot = Snapshot.objects.create(
+            resource=interested,
+            snapshot_no=1,
+            fetch_url=interested.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            page_title="Markdown Page Title",
+            extracted_text="Markdown向け本文です。",
+            ai_summary="Markdown向け要約です。",
+            ai_translation="Markdown向け翻訳です。",
+        )
+        interested.latest_snapshot = snapshot
+        interested.save(update_fields=["latest_snapshot"])
+
+        response = self.client.get(reverse("resources:ai_interested_markdown"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["Content-Type"], "text/markdown; charset=utf-8")
+        self.assertIn('filename="interested-urls.md"', response.headers["Content-Disposition"])
+        content = response.content.decode()
+        self.assertIn("# AI読取用: 興味ありURL", content)
+        self.assertIn("## 1. Interested Markdown Entry", content)
+        self.assertIn("- feedback: 興味あり (interested)", content)
+        self.assertIn("- url: https://example.com/interested-md", content)
+        self.assertIn("Markdownにも保存する", content)
+        self.assertIn("Markdown向け要約です。", content)
+        self.assertIn("Markdown向け翻訳です。", content)
+        self.assertIn("Markdown向け本文です。", content)
+        self.assertIn(reverse("resources:ai_interested"), content)
+        self.assertIn(reverse("resources:ai_not_interested_markdown"), content)
+
+    def test_ai_not_interested_markdown_filters_not_interested_resources(self):
+        Resource.objects.create(
+            original_url="https://example.com/not-interested-md",
+            normalized_url="https://example.com/not-interested-md",
+            domain="example.com",
+            title_manual="Not Interested Markdown Entry",
+            note="Markdown除外メモ",
+            interest_feedback=InterestFeedback.NOT_INTERESTED,
+        )
+        Resource.objects.create(
+            original_url="https://example.com/interested-md-hidden",
+            normalized_url="https://example.com/interested-md-hidden",
+            domain="example.com",
+            title_manual="Hidden Markdown Entry",
+            interest_feedback=InterestFeedback.INTERESTED,
+        )
+
+        response = self.client.get(reverse("resources:ai_not_interested_markdown"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["Content-Type"], "text/markdown; charset=utf-8")
+        self.assertIn('filename="not-interested-urls.md"', response.headers["Content-Disposition"])
+        content = response.content.decode()
+        self.assertIn("# AI読取用: 興味なしURL", content)
+        self.assertIn("## 1. Not Interested Markdown Entry", content)
+        self.assertIn("- feedback: 興味なし (not_interested)", content)
+        self.assertIn("Markdown除外メモ", content)
+        self.assertIn("latest_snapshot: none", content)
+        self.assertNotIn("Hidden Markdown Entry", content)
+
+    def test_settings_links_to_ai_reader_pages(self):
+        response = self.client.get(reverse("resources:settings"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "AI読取用ページ")
+        self.assertContains(response, reverse("resources:ai_interested"))
+        self.assertContains(response, reverse("resources:ai_not_interested"))
+        self.assertContains(response, reverse("resources:ai_interested_markdown"))
+        self.assertContains(response, reverse("resources:ai_not_interested_markdown"))
+        self.assertContains(response, "興味ありを見る")
+        self.assertContains(response, "興味なし Markdown")
+
     def test_delete_fetch_returns_json_without_redirect(self):
         ai_resource = Resource.objects.create(
             original_url="https://example.com/delete-fetch-ai",

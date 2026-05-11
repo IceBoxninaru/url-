@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <title>{{ page_title }} | URL Archive</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <style>
+        body {
+            margin: 0;
+            padding: 24px;
+            background: #ffffff;
+            color: #111827;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            line-height: 1.65;
+        }
+
+        main {
+            max-width: 980px;
+            margin: 0 auto;
+        }
+
+        header,
+        article {
+            border-bottom: 1px solid #d1d5db;
+            padding: 0 0 20px;
+            margin: 0 0 24px;
+        }
+
+        h1 {
+            margin: 0 0 8px;
+            font-size: 1.8rem;
+        }
+
+        h2 {
+            margin: 0 0 10px;
+            font-size: 1.25rem;
+        }
+
+        h3 {
+            margin: 18px 0 6px;
+            font-size: 1rem;
+        }
+
+        p,
+        dl {
+            margin: 0 0 10px;
+        }
+
+        dt {
+            margin-top: 8px;
+            font-weight: 700;
+        }
+
+        dd {
+            margin: 0;
+        }
+
+        pre {
+            margin: 0;
+            padding: 12px;
+            overflow: auto;
+            white-space: pre-wrap;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            background: #f9fafb;
+            color: #111827;
+            font: inherit;
+        }
+
+        .meta {
+            color: #4b5563;
+        }
+
+        .links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .empty {
+            padding: 16px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            background: #f9fafb;
+        }
+    </style>
+</head>
+<body>
+<main data-ai-reader-page="interest-feedback" data-feedback="{{ feedback }}">
+    <header>
+        <h1>{{ page_title }}</h1>
+        <p>{{ page_description }}</p>
+        <p class="meta">
+            generated_at={{ generated_at|date:"c" }};
+            feedback={{ feedback }};
+            total_count={{ total_count }};
+            shown_count={{ shown_count }};
+            limit={{ limit }}
+        </p>
+        <nav class="links" aria-label="AI reader links">
+            <a href="{{ interested_url }}">興味あり</a>
+            <a href="{{ not_interested_url }}">興味なし</a>
+            <a href="{% if feedback == 'interested' %}{{ interested_markdown_url }}{% else %}{{ not_interested_markdown_url }}{% endif %}">Markdown</a>
+        </nav>
+    </header>
+
+    {% for item in items %}
+        <article data-resource-id="{{ item.id }}" data-feedback="{{ item.feedback }}">
+            <h2>{{ forloop.counter }}. {{ item.title }}</h2>
+            <dl>
+                <dt>resource_id</dt>
+                <dd>{{ item.id }}</dd>
+                <dt>feedback</dt>
+                <dd>{{ item.feedback_label }} ({{ item.feedback }})</dd>
+                <dt>url</dt>
+                <dd><a href="{{ item.url }}">{{ item.url }}</a></dd>
+                <dt>normalized_url</dt>
+                <dd>{{ item.normalized_url }}</dd>
+                <dt>domain</dt>
+                <dd>{{ item.domain }}</dd>
+                <dt>tags</dt>
+                <dd>{% if item.tags %}{{ item.tags|join:", " }}{% else %}-{% endif %}</dd>
+                <dt>save_reason</dt>
+                <dd>{{ item.save_reason|default:"-" }}</dd>
+                <dt>next_action</dt>
+                <dd>{{ item.next_action|default:"-" }}</dd>
+                <dt>search_only</dt>
+                <dd>{{ item.search_only }}</dd>
+                <dt>created_at</dt>
+                <dd>{{ item.created_at|date:"c" }}</dd>
+                <dt>updated_at</dt>
+                <dd>{{ item.updated_at|date:"c" }}</dd>
+            </dl>
+
+            {% if item.note %}
+                <h3>note</h3>
+                <pre>{{ item.note }}</pre>
+            {% endif %}
+
+            {% if item.snapshot %}
+                <h3>latest_snapshot</h3>
+                <dl>
+                    <dt>snapshot_id</dt>
+                    <dd>{{ item.snapshot.id }}</dd>
+                    <dt>snapshot_no</dt>
+                    <dd>{{ item.snapshot.snapshot_no }}</dd>
+                    <dt>fetched_at</dt>
+                    <dd>{{ item.snapshot.fetched_at|date:"c" }}</dd>
+                    <dt>page_title</dt>
+                    <dd>{{ item.snapshot.page_title|default:"-" }}</dd>
+                    <dt>fetch_url</dt>
+                    <dd>{{ item.snapshot.fetch_url }}</dd>
+                    <dt>fetch_method</dt>
+                    <dd>{{ item.snapshot.fetch_method }}</dd>
+                    <dt>http_status</dt>
+                    <dd>{{ item.snapshot.http_status|default:"-" }}</dd>
+                    <dt>category</dt>
+                    <dd>{{ item.snapshot.category|default:"-" }}</dd>
+                    <dt>image_count</dt>
+                    <dd>{{ item.snapshot.image_count }}</dd>
+                    <dt>video_count</dt>
+                    <dd>{{ item.snapshot.video_count }}</dd>
+                    <dt>error_message</dt>
+                    <dd>{{ item.snapshot.error_message|default:"-" }}</dd>
+                </dl>
+                {% if item.snapshot.summary %}
+                    <h3>summary</h3>
+                    <pre>{{ item.snapshot.summary }}</pre>
+                {% endif %}
+                {% if item.snapshot.translation %}
+                    <h3>translation</h3>
+                    <pre>{{ item.snapshot.translation }}</pre>
+                {% endif %}
+                {% if item.snapshot.text_excerpt %}
+                    <h3>text_excerpt</h3>
+                    <pre>{{ item.snapshot.text_excerpt }}</pre>
+                {% endif %}
+            {% else %}
+                <p class="meta">latest_snapshot: none</p>
+            {% endif %}
+        </article>
+    {% empty %}
+        <p class="empty">{{ feedback_label }}のURLはまだありません。</p>
+    {% endfor %}
+</main>
+</body>
+</html>

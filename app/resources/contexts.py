@@ -7,12 +7,13 @@ from django.urls import reverse
 from django.utils import timezone
 
 from resources.forms import ResourceFilterForm
-from resources.models import Resource, ReviewState
+from resources.models import InterestFeedback, Resource, ReviewState
 from resources.services import get_capture_files, get_snapshot_screenshot_file
 from snapshots.models import Snapshot
 
 LIST_PAGE_SIZE = 10
 AI_SEARCH_PAGE_SIZE = 15
+AI_FEEDBACK_PAGE_LIMIT = 100
 BULK_EDIT_PAGE_SIZE = 10
 
 
@@ -328,3 +329,94 @@ def build_ai_search_resource_list_context(request) -> dict:
         result_empty_title="AI検索URLはまだありません",
         result_empty_text="今後AIに探させたURLは、検索専用URLとしてここに保存できます。",
     )
+
+
+def truncate_ai_reader_text(value: str, *, limit: int = 3000) -> str:
+    text = (value or "").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit].rstrip()}..."
+
+
+def parse_ai_feedback_limit(raw_limit: str | None) -> int:
+    try:
+        limit = int(raw_limit or AI_FEEDBACK_PAGE_LIMIT)
+    except (TypeError, ValueError):
+        limit = AI_FEEDBACK_PAGE_LIMIT
+    return max(1, min(limit, 200))
+
+
+def build_ai_feedback_item(resource: Resource) -> dict:
+    snapshot = resource.latest_snapshot
+    return {
+        "id": resource.id,
+        "title": resource.display_title,
+        "url": resource.original_url,
+        "normalized_url": resource.normalized_url,
+        "domain": resource.domain,
+        "feedback": resource.interest_feedback,
+        "feedback_label": resource.get_interest_feedback_display(),
+        "search_only": resource.search_only,
+        "save_reason": resource.get_save_reason_display() if resource.save_reason else "",
+        "next_action": resource.next_action,
+        "note": truncate_ai_reader_text(resource.note, limit=1200),
+        "tags": [tag.name for tag in resource.tags.all()],
+        "created_at": resource.created_at,
+        "updated_at": resource.updated_at,
+        "snapshot": {
+            "id": snapshot.id,
+            "snapshot_no": snapshot.snapshot_no,
+            "fetched_at": snapshot.fetched_at,
+            "page_title": snapshot.page_title,
+            "fetch_url": snapshot.fetch_url,
+            "fetch_method": snapshot.get_fetch_method_display(),
+            "http_status": snapshot.http_status,
+            "summary": truncate_ai_reader_text(snapshot.ai_summary, limit=1200),
+            "translation": truncate_ai_reader_text(snapshot.ai_translation, limit=1600),
+            "category": snapshot.ai_category,
+            "text_excerpt": truncate_ai_reader_text(snapshot.extracted_text),
+            "error_message": snapshot.error_message,
+            "image_count": snapshot.image_count,
+            "video_count": snapshot.video_count,
+        }
+        if snapshot
+        else None,
+    }
+
+
+def build_ai_feedback_page_context(request, feedback: str) -> dict:
+    feedback_labels = {
+        InterestFeedback.INTERESTED: "興味あり",
+        InterestFeedback.NOT_INTERESTED: "興味なし",
+    }
+    page_titles = {
+        InterestFeedback.INTERESTED: "AI読取用: 興味ありURL",
+        InterestFeedback.NOT_INTERESTED: "AI読取用: 興味なしURL",
+    }
+    page_descriptions = {
+        InterestFeedback.INTERESTED: "次の検索で広げたいURLです。",
+        InterestFeedback.NOT_INTERESTED: "次の検索で避けたいURL・除外判断の材料です。",
+    }
+    limit = parse_ai_feedback_limit(request.GET.get("limit"))
+    queryset = (
+        Resource.objects.with_related()
+        .filter(interest_feedback=feedback)
+        .order_by("-updated_at", "-id")
+    )
+    total_count = queryset.count()
+    resources = list(queryset[:limit])
+    return {
+        "page_title": page_titles[feedback],
+        "page_description": page_descriptions[feedback],
+        "feedback": feedback,
+        "feedback_label": feedback_labels[feedback],
+        "items": [build_ai_feedback_item(resource) for resource in resources],
+        "total_count": total_count,
+        "shown_count": len(resources),
+        "limit": limit,
+        "generated_at": timezone.now(),
+        "interested_url": reverse("resources:ai_interested"),
+        "not_interested_url": reverse("resources:ai_not_interested"),
+        "interested_markdown_url": reverse("resources:ai_interested_markdown"),
+        "not_interested_markdown_url": reverse("resources:ai_not_interested_markdown"),
+    }

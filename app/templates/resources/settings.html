@@ -23,6 +23,17 @@
             <p>キュー中または再試行待ちのジョブは {{ queued_job_count }} 件です。総ジョブ数は {{ job_count }} 件です。</p>
             <a href="{% url 'jobs:list' %}" class="button button--primary">ジョブを確認する</a>
         </section>
+
+        <section class="panel settings-card">
+            <h2>AI読取用ページ</h2>
+            <p>興味あり・興味なしに分けたURLを、人もAIも読める形式で確認できます。</p>
+            <div class="quick-link-grid">
+                <a href="{% url 'resources:ai_interested' %}" class="button button--primary">興味ありを見る</a>
+                <a href="{% url 'resources:ai_not_interested' %}" class="button button--primary">興味なしを見る</a>
+                <a href="{% url 'resources:ai_interested_markdown' %}" class="button button--soft">興味あり Markdown</a>
+                <a href="{% url 'resources:ai_not_interested_markdown' %}" class="button button--soft">興味なし Markdown</a>
+            </div>
+        </section>
     </div>
 
 </div>
