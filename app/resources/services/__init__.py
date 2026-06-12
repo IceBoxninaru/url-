@@ -52,6 +52,17 @@ from .snapshots import build_snapshot_diff_context, build_snapshot_diff_items, g
 from .urls import normalize_url
 from .link_checks import DELETE_MARKERS, detect_deleted_like, should_refresh_link_check
 from .jobs import enqueue_ai_job, enqueue_capture_job, status_from_snapshot
+from .translation import (
+    TRANSLATION_ENDPOINT,
+    TRANSLATION_MAX_CHUNK_CHARS,
+    TRANSLATION_MAX_SOURCE_CHARS,
+    build_translation_source_text,
+    is_probably_japanese_text,
+    normalize_ai_text,
+    split_translation_chunks,
+    translate_text_chunk_to_japanese,
+    translate_text_to_japanese,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +89,6 @@ AUDIO_EXTENSIONS = {".aac", ".m4a", ".mp3", ".ogg", ".oga", ".wav"}
 MEDIA_TEXT_SCAN_MAX_CHARS = 2_000_000
 RAW_MEDIA_URL_PATTERN = re.compile(r"https?:\\?/\\?/[^\"'<>\s]+")
 ENCODED_MEDIA_URL_PATTERN = re.compile(r"https?%3a%2f%2f[^\"'<>\s]+", re.IGNORECASE)
-TRANSLATION_MAX_SOURCE_CHARS = 1600
-TRANSLATION_MAX_CHUNK_CHARS = 400
-TRANSLATION_ENDPOINT = "https://translate.googleapis.com/translate_a/single"
 LOCAL_LLM_PROVIDERS = {"openclaw", "local_llm", "openai_compatible", "ollama"}
 LOCAL_LLM_CATEGORIES = {"general", "social", "shopping", "documentation", "news", "video"}
 
@@ -2706,121 +2714,6 @@ def persist_snapshot(resource: Resource, result: CaptureResult) -> Snapshot:
         is_deleted_like=result.deleted_like,
         error_message=result.error_message,
     )
-
-
-def normalize_ai_text(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def build_translation_source_text(snapshot: Snapshot) -> str:
-    source = snapshot.extracted_text or snapshot.og_description or snapshot.page_title
-    normalized = normalize_ai_text(source)
-    if not normalized:
-        return ""
-    source_limit = min(getattr(settings, "AI_MAX_INPUT_CHARS", TRANSLATION_MAX_SOURCE_CHARS), TRANSLATION_MAX_SOURCE_CHARS)
-    return normalized[:source_limit].strip()
-
-
-def split_translation_chunks(text: str, *, max_chars: int = TRANSLATION_MAX_CHUNK_CHARS) -> list[str]:
-    normalized = normalize_ai_text(text)
-    if not normalized:
-        return []
-    if len(normalized) <= max_chars:
-        return [normalized]
-
-    chunks: list[str] = []
-    current = ""
-    segments = [segment for segment in re.split(r"(?<=[.!?。！？])\s+", normalized) if segment]
-    for segment in segments:
-        if len(segment) > max_chars:
-            if current:
-                chunks.append(current)
-                current = ""
-            for start in range(0, len(segment), max_chars):
-                piece = segment[start : start + max_chars].strip()
-                if piece:
-                    chunks.append(piece)
-            continue
-        candidate = segment if not current else f"{current} {segment}"
-        if len(candidate) <= max_chars:
-            current = candidate
-        else:
-            chunks.append(current)
-            current = segment
-    if current:
-        chunks.append(current)
-    return chunks
-
-
-def is_probably_japanese_text(text: str) -> bool:
-    sample = normalize_ai_text(text)[:800]
-    if not sample:
-        return False
-    kana_count = len(re.findall(r"[ぁ-ゖァ-ヺー]", sample))
-    cjk_count = len(re.findall(r"[一-龯々〆ヵヶ]", sample))
-    return kana_count >= 3 or (kana_count >= 1 and cjk_count >= 4)
-
-
-def translate_text_chunk_to_japanese(text: str) -> tuple[str, str]:
-    with httpx.Client(
-        timeout=15.0,
-        headers={"User-Agent": settings.CAPTURE_HTTP_USER_AGENT},
-    ) as client:
-        response = client.get(
-            TRANSLATION_ENDPOINT,
-            params={
-                "client": "gtx",
-                "sl": "auto",
-                "tl": "ja",
-                "dt": "t",
-                "q": text,
-            },
-        )
-    response.raise_for_status()
-    payload = response.json()
-    translated_parts: list[str] = []
-    detected_language = ""
-    if isinstance(payload, list):
-        if len(payload) > 2 and isinstance(payload[2], str):
-            detected_language = payload[2]
-        if payload and isinstance(payload[0], list):
-            for item in payload[0]:
-                if isinstance(item, list) and item and isinstance(item[0], str):
-                    translated_parts.append(item[0])
-    return normalize_ai_text("".join(translated_parts)), detected_language
-
-
-def translate_text_to_japanese(text: str) -> tuple[str, dict]:
-    normalized = normalize_ai_text(text)
-    if not normalized:
-        return "", {"translation_status": "empty_source", "detected_language": ""}
-    if is_probably_japanese_text(normalized):
-        return "", {"translation_status": "source_already_japanese", "detected_language": "ja"}
-
-    translated_chunks: list[str] = []
-    detected_language = ""
-    try:
-        for chunk in split_translation_chunks(normalized):
-            translated_chunk, chunk_language = translate_text_chunk_to_japanese(chunk)
-            if translated_chunk:
-                translated_chunks.append(translated_chunk)
-            if chunk_language and not detected_language:
-                detected_language = chunk_language
-    except Exception as exc:  # pragma: no cover
-        logger.warning("Japanese translation failed: %s", exc)
-        return "", {
-            "translation_status": "translation_failed",
-            "detected_language": detected_language,
-            "error_message": str(exc),
-        }
-
-    translation = normalize_ai_text(" ".join(translated_chunks))
-    if detected_language.startswith("ja"):
-        return "", {"translation_status": "source_already_japanese", "detected_language": detected_language}
-    return translation, {
-        "translation_status": "translated" if translation else "translation_unavailable",
-        "detected_language": detected_language,
-    }
 
 
 def infer_category(snapshot: Snapshot) -> str:
