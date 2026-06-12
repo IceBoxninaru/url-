@@ -299,7 +299,7 @@ class URLNormalizationTests(TestCase):
             return real_import(name, *args, **kwargs)
 
         with patch("builtins.__import__", side_effect=fake_import):
-            with patch("resources.services.media_downloads.shutil.which", return_value="/usr/bin/ffmpeg"):
+            with patch("resources.services.media_download_common.shutil.which", return_value="/usr/bin/ffmpeg"):
                 self.assertEqual(get_ffmpeg_executable(), "/usr/bin/ffmpeg")
 
     @override_settings(CAPTURE_X_STORAGE_STATE_PATH="storage/auth/x.json")
@@ -2608,10 +2608,10 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             }
         ]
 
-        with patch("resources.services.media_downloads.httpx.Client", return_value=FakeHttpClient(responses)):
-            with patch("resources.services.media_downloads.get_ffprobe_executable", return_value="ffprobe"):
+        with patch("resources.services.media_download_instagram.httpx.Client", return_value=FakeHttpClient(responses)):
+            with patch("resources.services.media_download_instagram.get_ffprobe_executable", return_value="ffprobe"):
                 with patch(
-                    "resources.services.media_downloads.MediaProbe.probe_file",
+                    "resources.services.media_download_instagram.MediaProbe.probe_file",
                     return_value=MediaProbeResult(has_video=True, has_audio=False, duration_sec=9.5),
                 ):
                     result = download_video_assets(
@@ -2662,18 +2662,18 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             Path(command[-1]).write_bytes(b"muxed-video")
             return subprocess.CompletedProcess(command, 0, "", "")
 
-        with patch("resources.services.media_downloads.httpx.Client", return_value=FakeHttpClient(responses)):
-            with patch("resources.services.media_downloads.get_ffprobe_executable", return_value="ffprobe"):
+        with patch("resources.services.media_download_instagram.httpx.Client", return_value=FakeHttpClient(responses)):
+            with patch("resources.services.media_download_instagram.get_ffprobe_executable", return_value="ffprobe"):
                 with patch(
-                    "resources.services.media_downloads.MediaProbe.probe_file",
+                    "resources.services.media_download_instagram.MediaProbe.probe_file",
                     side_effect=[
                         MediaProbeResult(has_video=True, has_audio=False, duration_sec=12.0),
                         MediaProbeResult(has_video=False, has_audio=True, duration_sec=12.1),
                         MediaProbeResult(has_video=True, has_audio=True, duration_sec=12.0),
                     ],
                 ):
-                    with patch("resources.services.media_downloads.get_ffmpeg_executable", return_value="ffmpeg"):
-                        with patch("resources.services.media_downloads.subprocess.run", side_effect=fake_ffmpeg_run):
+                    with patch("resources.services.media_download_instagram.get_ffmpeg_executable", return_value="ffmpeg"):
+                        with patch("resources.services.media_download_instagram.subprocess.run", side_effect=fake_ffmpeg_run):
                             result = download_video_assets(
                                 "https://www.instagram.com/reel/example/",
                                 "<html></html>",
@@ -2698,8 +2698,8 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             )
         }
 
-        with patch("resources.services.media_downloads.httpx.Client", return_value=FakeHttpClient(responses)):
-            with patch("resources.services.media_downloads.get_ffprobe_executable", return_value=None):
+        with patch("resources.services.media_download_instagram.httpx.Client", return_value=FakeHttpClient(responses)):
+            with patch("resources.services.media_download_instagram.get_ffprobe_executable", return_value=None):
                 result = download_video_assets(
                     "https://www.instagram.com/reel/example/",
                     "<html></html>",
@@ -2731,9 +2731,9 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             )
         }
 
-        with patch("resources.services.media_downloads.httpx.Client", return_value=FakeHttpClient(responses)):
+        with patch("resources.services.media_download_x.httpx.Client", return_value=FakeHttpClient(responses)):
             with patch(
-                "resources.services.media_downloads.MediaProbe.probe_file",
+                "resources.services.media_download_common.MediaProbe.probe_file",
                 return_value=MediaProbeResult(has_video=True, has_audio=False, duration_sec=8.0),
             ):
                 result = download_video_assets(
@@ -2767,9 +2767,9 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             )
         }
 
-        with patch("resources.services.media_downloads.httpx.Client", return_value=FakeHttpClient(responses)):
+        with patch("resources.services.media_download_x.httpx.Client", return_value=FakeHttpClient(responses)):
             with patch(
-                "resources.services.media_downloads.MediaProbe.probe_file",
+                "resources.services.media_download_common.MediaProbe.probe_file",
                 return_value=MediaProbeResult(failure_reason="moov atom not found"),
             ):
                 result = download_video_assets(
@@ -2823,10 +2823,10 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             },
         ]
 
-        with patch("resources.services.media_downloads.httpx.Client", return_value=FakeHttpClient(responses)):
-            with patch("resources.services.media_downloads.get_ffprobe_executable", return_value="ffprobe"):
+        with patch("resources.services.media_download_instagram.httpx.Client", return_value=FakeHttpClient(responses)):
+            with patch("resources.services.media_download_instagram.get_ffprobe_executable", return_value="ffprobe"):
                 with patch(
-                    "resources.services.media_downloads.MediaProbe.probe_file",
+                    "resources.services.media_download_instagram.MediaProbe.probe_file",
                     side_effect=[
                         MediaProbeResult(has_video=True, has_audio=False, duration_sec=12.0),
                         MediaProbeResult(has_video=False, has_audio=True, duration_sec=30.0),
