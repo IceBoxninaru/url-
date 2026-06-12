@@ -2190,8 +2190,8 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         )
 
         with self.assertLogs("resources.services", level="WARNING") as captured_logs:
-            with patch("resources.services.fetch_with_http", return_value=http_result) as mocked_http:
-                with patch("resources.services.should_use_playwright", return_value=False):
+            with patch("resources.services.capture.fetch_with_http", return_value=http_result) as mocked_http:
+                with patch("resources.services.capture.should_use_playwright", return_value=False):
                     result = choose_capture_result(self.resource)
 
         self.assertEqual(result, http_result)
@@ -2218,8 +2218,8 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             extracted_text="body",
         )
 
-        with patch("resources.services.fetch_with_http", return_value=http_result) as mocked_http:
-            with patch("resources.services.should_use_playwright", return_value=False):
+        with patch("resources.services.capture.fetch_with_http", return_value=http_result) as mocked_http:
+            with patch("resources.services.capture.should_use_playwright", return_value=False):
                 result = choose_capture_result(self.resource)
 
         self.assertEqual(result, http_result)
@@ -2244,8 +2244,8 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             extracted_text="body",
         )
 
-        with patch("resources.services.fetch_with_http", return_value=http_result) as mocked_http:
-            with patch("resources.services.should_use_playwright", return_value=False):
+        with patch("resources.services.capture.fetch_with_http", return_value=http_result) as mocked_http:
+            with patch("resources.services.capture.should_use_playwright", return_value=False):
                 result = choose_capture_result(self.resource)
 
         self.assertEqual(result, http_result)
@@ -2353,7 +2353,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
                 captured["request"] = json
                 return FakeResponse()
 
-        with patch("resources.services.httpx.Client", FakeClient):
+        with patch("resources.services.local_llm.httpx.Client", FakeClient):
             result = run_ai_pipeline(snapshot)
 
         self.assertEqual(captured["url"], "http://llm.local/v1/chat/completions")
