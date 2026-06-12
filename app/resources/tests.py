@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 import builtins
+import json
 from io import StringIO
 import shutil
 import subprocess
@@ -2841,6 +2842,46 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
 
         self.assertEqual(result.extraction_status, "partial")
         self.assertTrue(any(log["reason"] == "duration_mismatch" for log in result.skip_logs))
+
+    def test_verify_capture_url_command_outputs_summary_and_cleans_video_temp_file(self):
+        temp_path, size_bytes = self.create_temp_video()
+        capture_result = CaptureResult(
+            fetch_url="https://example.com/video",
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            html="<html><body>video</body></html>",
+            extracted_text="video",
+            metadata={"page_title": "Video"},
+            response_payload={
+                "video_capture": {
+                    "candidate_urls": ["https://cdn.example.com/video.mp4"],
+                    "attempts": [{"result": "saved"}],
+                    "extraction_status": "success",
+                    "extraction_strategy": "direct",
+                }
+            },
+            captured_videos=[
+                CapturedVideo(
+                    source_url="https://cdn.example.com/video.mp4",
+                    temp_path=temp_path,
+                    size_bytes=size_bytes,
+                    content_type="video/mp4",
+                    metadata={"extraction_strategy": "direct"},
+                )
+            ],
+        )
+
+        output = StringIO()
+        with patch("resources.management.commands.verify_capture_url.choose_capture_result", return_value=capture_result):
+            call_command("verify_capture_url", "https://example.com/video", "--require-video", stdout=output)
+
+        payload = json.loads(output.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["results"][0]["domain"], "example.com")
+        self.assertEqual(payload["results"][0]["video_count"], 1)
+        self.assertEqual(payload["results"][0]["video_capture"]["extraction_status"], "success")
+        self.assertFalse(temp_path.exists())
 
     def test_failed_capture_retries_and_records_failure_snapshot(self):
         enqueue_capture_job(self.resource)

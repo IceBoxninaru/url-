@@ -26,6 +26,17 @@ CAPTURE_X_STORAGE_STATE_PATH=storage/auth/x.json
 CAPTURE_X_PROFILE_PATH=storage/auth/x_profile
 ```
 
+## Capture verification
+
+Run a non-persistent capture check for real URLs without saving a `Resource` or `Snapshot`.
+Use `--method playwright` for X / Instagram checks, and `--include-details` when you need
+candidate URLs, attempts, skips, and observed media requests in the JSON output.
+
+```powershell
+.venv\Scripts\python app\manage.py verify_capture_url https://x.com/example/status/1 --method playwright --include-details --require-video
+.venv\Scripts\python app\manage.py verify_capture_url https://www.instagram.com/reel/example/ --method playwright --include-details --require-video
+```
+
 ## Docker Compose
 ```powershell
 docker compose up --build
