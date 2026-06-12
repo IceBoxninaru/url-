@@ -1,31 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from resources.models import Resource
+from resources.services import count_resource_files
 
 
 IMAGE_EXTENSIONS = {".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
 VIDEO_EXTENSIONS = {".m4v", ".mov", ".mp4", ".webm"}
-
-
-def build_resource_directory(root: Path, resource_id: int) -> Path:
-    return Path(root) / f"resource_{resource_id:04d}"
-
-
-def count_files(root: Path, resource_id: int, extensions: set[str]) -> int:
-    resource_dir = build_resource_directory(root, resource_id)
-    if not resource_dir.exists() or not resource_dir.is_dir():
-        return 0
-    return sum(
-        1
-        for path in resource_dir.iterdir()
-        if path.is_file() and path.suffix.lower() in extensions
-    )
 
 
 class Command(BaseCommand):
@@ -54,8 +38,8 @@ class Command(BaseCommand):
         video_false_without_files = 0
 
         for resource in resources:
-            image_count = count_files(settings.IMAGE_STORAGE_ROOT, resource.pk, IMAGE_EXTENSIONS)
-            video_count = count_files(settings.VIDEO_STORAGE_ROOT, resource.pk, VIDEO_EXTENSIONS)
+            image_count = count_resource_files(settings.IMAGE_STORAGE_ROOT, resource.pk, IMAGE_EXTENSIONS)
+            video_count = count_resource_files(settings.VIDEO_STORAGE_ROOT, resource.pk, VIDEO_EXTENSIONS)
             update_images = not resource.capture_images
             update_videos = not resource.capture_videos
 

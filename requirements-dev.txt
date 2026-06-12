@@ -1,2 +1,3 @@
 coverage==7.13.0
 ruff==0.14.10
+vulture==2.16

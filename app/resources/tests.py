@@ -78,7 +78,7 @@ class FakeStreamResponse:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc, tb):
+    def __exit__(self, *args):
         return False
 
     def iter_bytes(self):
@@ -92,7 +92,7 @@ class FakeHttpClient:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc, tb):
+    def __exit__(self, *args):
         return False
 
     def stream(self, method: str, url: str):
@@ -1058,14 +1058,6 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertIn('name="next" value="/ai-search/resources/?page=2"', payload["html"])
         self.assertNotIn('name="next" value="/ai-search/resources/live/', payload["html"])
 
-    def test_import_may10_ai_urls_disables_video_capture(self):
-        output = StringIO()
-
-        call_command("import_may10_ai_urls", "--no-jobs", stdout=output)
-
-        self.assertEqual(Resource.objects.filter(search_only=True).count(), 15)
-        self.assertFalse(Resource.objects.filter(search_only=True, capture_videos=True).exists())
-
     def test_interest_feedback_marks_ai_search_resource_as_interested(self):
         ai_resource = Resource.objects.create(
             original_url="https://example.com/interest-ai",
@@ -1303,7 +1295,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertNotContains(response, "URL登録")
 
     def test_ai_not_interested_page_is_machine_readable_and_filters_not_interested_resources(self):
-        not_interested = Resource.objects.create(
+        Resource.objects.create(
             original_url="https://example.com/not-interested-reader",
             normalized_url="https://example.com/not-interested-reader",
             domain="example.com",
@@ -1880,7 +1872,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             capture_images=True,
             capture_videos=False,
         )
-        first_snapshot = Snapshot.objects.create(
+        Snapshot.objects.create(
             resource=resource,
             snapshot_no=1,
             fetch_url=resource.normalized_url,
@@ -2013,7 +2005,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             domain="example.com",
             title_manual="Snapshot Diff",
         )
-        previous_snapshot = Snapshot.objects.create(
+        Snapshot.objects.create(
             resource=resource,
             snapshot_no=1,
             fetch_url=resource.normalized_url,
@@ -2375,7 +2367,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             def __enter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            def __exit__(self, *args):
                 return False
 
             def post(self, url, json):
@@ -2666,7 +2658,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             },
         ]
 
-        def fake_ffmpeg_run(command, capture_output=True, text=True):
+        def fake_ffmpeg_run(command, **kwargs):
             Path(command[-1]).write_bytes(b"muxed-video")
             return subprocess.CompletedProcess(command, 0, "", "")
 

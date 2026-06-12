@@ -17,6 +17,7 @@ from .types import (
 from .storage import (
     build_resource_directory,
     build_storage_asset_path,
+    count_resource_files,
     filter_existing_snapshot_assets,
     get_capture_files,
     get_snapshot_screenshot_file,

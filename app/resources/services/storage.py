@@ -12,6 +12,17 @@ def build_resource_directory(root: Path, resource_id: int) -> Path:
     return root / f"resource_{resource_id:04d}"
 
 
+def count_resource_files(root: Path, resource_id: int, extensions: set[str]) -> int:
+    resource_dir = build_resource_directory(Path(root), resource_id)
+    if not resource_dir.exists() or not resource_dir.is_dir():
+        return 0
+    return sum(
+        1
+        for path in resource_dir.iterdir()
+        if path.is_file() and path.suffix.lower() in extensions
+    )
+
+
 def resolve_storage_file_path(raw_path: str) -> Path:
     candidate = Path(raw_path)
     if not candidate.is_absolute():
