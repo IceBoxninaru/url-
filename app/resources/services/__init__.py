@@ -10,7 +10,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlparse, urlunparse
@@ -27,6 +26,28 @@ from django.utils.dateparse import parse_datetime
 from jobs.models import CaptureJob, JobStatus, JobType
 from resources.models import LinkStatus, Resource, ResourceStatus
 from snapshots.models import FetchMethod, Snapshot
+
+from .types import (
+    AIResult,
+    CapturedImage,
+    CapturedVideo,
+    CaptureResult,
+    DownloadedMediaCandidate,
+    DownloadedVideoAssets,
+    LinkCheckResult,
+    MediaProbeResult,
+)
+from .storage import (
+    build_resource_directory,
+    build_storage_asset_path,
+    filter_existing_snapshot_assets,
+    get_capture_files,
+    get_snapshot_screenshot_file,
+    move_storage_file,
+    resolve_asset_file_path,
+    resolve_storage_file_path,
+    write_storage_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,113 +92,6 @@ LOCAL_LLM_PROVIDERS = {"openclaw", "local_llm", "openai_compatible", "ollama"}
 LOCAL_LLM_CATEGORIES = {"general", "social", "shopping", "documentation", "news", "video"}
 
 
-@dataclass
-class CaptureResult:
-    fetch_url: str
-    fetch_method: str
-    http_status: int | None = None
-    html: str = ""
-    extracted_text: str = ""
-    metadata: dict = field(default_factory=dict)
-    response_payload: dict = field(default_factory=dict)
-    screenshot_bytes: bytes | None = None
-    screenshot_taken_at: datetime | None = None
-    page_height: int | None = None
-    viewport_width: int | None = None
-    viewport_height: int | None = None
-    captured_images: list["CapturedImage"] = field(default_factory=list)
-    captured_videos: list["CapturedVideo"] = field(default_factory=list)
-    error_message: str = ""
-    deleted_like: bool = False
-
-    @property
-    def is_success(self) -> bool:
-        return bool(self.html or self.extracted_text) and not self.error_message and (
-            self.http_status is None or self.http_status < 400
-        )
-
-
-@dataclass
-class AIResult:
-    translation: str = ""
-    category: str = ""
-    summary: str = ""
-    payload: dict = field(default_factory=dict)
-
-
-@dataclass
-class LinkCheckResult:
-    status: str
-    http_status: int | None = None
-    checked_url: str = ""
-    error_message: str = ""
-
-
-@dataclass
-class CapturedImage:
-    source_url: str
-    content: bytes
-    content_type: str = ""
-
-
-@dataclass
-class CapturedVideo:
-    source_url: str
-    temp_path: Path
-    size_bytes: int
-    content_type: str = ""
-    metadata: dict = field(default_factory=dict)
-
-
-@dataclass
-class DownloadedVideoAssets:
-    assets: list["CapturedVideo"] = field(default_factory=list)
-    candidate_urls: list[str] = field(default_factory=list)
-    candidate_details: list[dict] = field(default_factory=list)
-    attempts: list[dict] = field(default_factory=list)
-    skip_logs: list[dict] = field(default_factory=list)
-    summary: dict = field(default_factory=dict)
-    extraction_status: str = "not_attempted"
-    extraction_strategy: str = ""
-    failure_reason: str = ""
-    selected_asset: dict = field(default_factory=dict)
-
-
-@dataclass
-class MediaProbeResult:
-    has_video: bool = False
-    has_audio: bool = False
-    duration_sec: float | None = None
-    video_streams: int = 0
-    audio_streams: int = 0
-    format_name: str = ""
-    probe_tool: str = ""
-    failure_reason: str = ""
-    raw: dict = field(default_factory=dict)
-
-    def to_dict(self) -> dict:
-        return {
-            "has_video": self.has_video,
-            "has_audio": self.has_audio,
-            "duration_sec": self.duration_sec,
-            "video_streams": self.video_streams,
-            "audio_streams": self.audio_streams,
-            "format_name": self.format_name,
-            "probe_tool": self.probe_tool,
-            "failure_reason": self.failure_reason,
-        }
-
-
-@dataclass
-class DownloadedMediaCandidate:
-    candidate: dict
-    source_url: str
-    temp_path: Path
-    size_bytes: int
-    content_type: str = ""
-    probe: MediaProbeResult = field(default_factory=MediaProbeResult)
-
-
 def normalize_url(raw_url: str) -> str:
     candidate = raw_url.strip()
     if not candidate:
@@ -216,108 +130,6 @@ def normalize_url(raw_url: str) -> str:
             "",
         )
     )
-
-
-def build_resource_directory(root: Path, resource_id: int) -> Path:
-    return root / f"resource_{resource_id:04d}"
-
-
-def resolve_storage_file_path(raw_path: str) -> Path:
-    candidate = Path(raw_path)
-    if not candidate.is_absolute():
-        candidate = settings.ROOT_DIR / candidate
-    return candidate
-
-
-def build_storage_asset_path(storage_root: Path, resource_id: int, filename: str) -> str:
-    return (Path("storage") / Path(storage_root).name / f"resource_{resource_id:04d}" / filename).as_posix()
-
-
-def resolve_asset_file_path(
-    raw_path: str,
-    storage_root: Path | None = None,
-    *,
-    resource_id: int | None = None,
-) -> tuple[Path, str | None]:
-    candidate = resolve_storage_file_path(raw_path)
-    if candidate.exists():
-        return candidate, None
-
-    if storage_root is None:
-        return candidate, None
-
-    fallback_paths: list[Path] = []
-    relative_path = Path(raw_path)
-    if resource_id is not None and relative_path.name:
-        fallback_paths.append(build_resource_directory(Path(storage_root), resource_id) / relative_path.name)
-    if len(relative_path.parts) >= 2:
-        fallback_paths.append(Path(storage_root).joinpath(*relative_path.parts[-2:]))
-    for fallback in fallback_paths:
-        if fallback.exists():
-            display_path = None
-            if resource_id is not None and fallback.name:
-                display_path = build_storage_asset_path(Path(storage_root), resource_id, fallback.name)
-            return fallback, display_path
-    return candidate, None
-
-
-def filter_existing_snapshot_assets(
-    assets: list[dict] | None,
-    *,
-    storage_root: Path | None = None,
-    resource_id: int | None = None,
-) -> list[dict]:
-    existing_assets: list[dict] = []
-    for asset in assets or []:
-        path = str(asset.get("path", "")).strip()
-        if not path:
-            continue
-        file_path, display_path = resolve_asset_file_path(path, storage_root, resource_id=resource_id)
-        if file_path.exists() and file_path.is_file():
-            existing_assets.append({**asset, "path": display_path or path})
-    return existing_assets
-
-
-def get_capture_files(snapshot: Snapshot | None) -> tuple[list[dict], list[dict]]:
-    if snapshot is None:
-        return [], []
-    return (
-        filter_existing_snapshot_assets(
-            snapshot.image_assets,
-            storage_root=settings.IMAGE_STORAGE_ROOT,
-            resource_id=snapshot.resource_id,
-        ),
-        filter_existing_snapshot_assets(
-            snapshot.video_assets,
-            storage_root=settings.VIDEO_STORAGE_ROOT,
-            resource_id=snapshot.resource_id,
-        ),
-    )
-
-
-def get_snapshot_screenshot_file(snapshot: Snapshot | None) -> dict | None:
-    if snapshot is None:
-        return None
-    path = (snapshot.screenshot_full_path or "").strip()
-    if not path:
-        return None
-    file_path, display_path = resolve_asset_file_path(
-        path,
-        settings.SCREENSHOT_STORAGE_ROOT,
-        resource_id=snapshot.resource_id,
-    )
-    if not file_path.exists() or not file_path.is_file():
-        return None
-    try:
-        size_bytes = file_path.stat().st_size
-    except OSError:
-        size_bytes = 0
-    return {
-        "source_url": snapshot.fetch_url,
-        "path": display_path or path,
-        "content_type": "image/png",
-        "size_bytes": size_bytes,
-    }
 
 
 def get_previous_snapshot(snapshot: Snapshot | None) -> Snapshot | None:
@@ -374,25 +186,6 @@ def build_snapshot_diff_context(snapshot: Snapshot | None) -> dict:
         "previous_snapshot": previous_snapshot,
         "items": build_snapshot_diff_items(snapshot, previous_snapshot),
     }
-
-
-def write_storage_file(root: Path, resource_id: int, filename: str, content, binary: bool = False) -> str:
-    resource_dir = build_resource_directory(root, resource_id)
-    resource_dir.mkdir(parents=True, exist_ok=True)
-    target = resource_dir / filename
-    if binary:
-        target.write_bytes(content)
-    else:
-        target.write_text(content, encoding="utf-8")
-    return target.relative_to(settings.ROOT_DIR).as_posix()
-
-
-def move_storage_file(root: Path, resource_id: int, filename: str, source_path: Path) -> str:
-    resource_dir = build_resource_directory(root, resource_id)
-    resource_dir.mkdir(parents=True, exist_ok=True)
-    target = resource_dir / filename
-    shutil.move(str(source_path), target)
-    return target.relative_to(settings.ROOT_DIR).as_posix()
 
 
 def is_x_domain(domain: str) -> bool:
