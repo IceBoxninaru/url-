@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 import os
 import shutil
 import subprocess
@@ -1079,22 +1081,13 @@ def download_instagram_video_assets(
     return result
 
 
-def download_video_assets(
+def download_generic_video_assets(
     source_url: str,
     html: str,
     extra_urls: list[str] | None = None,
     page_domain: str = "",
     extra_candidates: list[dict] | None = None,
 ) -> DownloadedVideoAssets:
-    if is_instagram_domain(page_domain):
-        return download_instagram_video_assets(
-            source_url,
-            html,
-            extra_urls=extra_urls,
-            extra_candidates=extra_candidates,
-            page_domain=page_domain,
-        )
-
     candidate_details = collect_video_candidate_details(
         source_url,
         html,
@@ -1229,3 +1222,40 @@ def download_video_assets(
         result.extraction_strategy = "download"
         result.failure_reason = result.attempts[-1].get("reason", "download_failed")
     return result
+
+
+@dataclass(frozen=True)
+class VideoDownloadStrategy:
+    name: str
+    matches: Callable[[str], bool]
+    download: Callable[..., DownloadedVideoAssets]
+
+
+VIDEO_DOWNLOAD_STRATEGIES = (
+    VideoDownloadStrategy("instagram", is_instagram_domain, download_instagram_video_assets),
+    VideoDownloadStrategy("generic", lambda _domain: True, download_generic_video_assets),
+)
+
+
+def select_video_download_strategy(page_domain: str) -> VideoDownloadStrategy:
+    for strategy in VIDEO_DOWNLOAD_STRATEGIES:
+        if strategy.matches(page_domain):
+            return strategy
+    return VIDEO_DOWNLOAD_STRATEGIES[-1]
+
+
+def download_video_assets(
+    source_url: str,
+    html: str,
+    extra_urls: list[str] | None = None,
+    page_domain: str = "",
+    extra_candidates: list[dict] | None = None,
+) -> DownloadedVideoAssets:
+    strategy = select_video_download_strategy(page_domain)
+    return strategy.download(
+        source_url,
+        html,
+        extra_urls=extra_urls,
+        page_domain=page_domain,
+        extra_candidates=extra_candidates,
+    )

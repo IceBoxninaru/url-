@@ -42,6 +42,7 @@ from resources.services import (
     resolve_storage_state_path,
     translate_text_to_japanese,
 )
+from resources.services.media_downloads import select_video_download_strategy
 from snapshots.models import FetchMethod, Snapshot
 from tags.models import Tag
 
@@ -268,6 +269,10 @@ class URLNormalizationTests(TestCase):
                 content_type="video/mp4",
             )
         )
+
+    def test_select_video_download_strategy_uses_instagram_strategy_only_for_instagram(self):
+        self.assertEqual(select_video_download_strategy("instagram.com").name, "instagram")
+        self.assertEqual(select_video_download_strategy("x.com").name, "generic")
 
     @override_settings(CAPTURE_X_STORAGE_STATE_PATH="storage/auth/x.json")
     def test_resolve_storage_state_path_expands_relative_path_under_root(self):
