@@ -5,8 +5,18 @@
     <meta charset="utf-8">
     <title>{% block title %}URL Archive{% endblock %}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="{% static 'app.css' %}?v=media-viewer-1">
-    <script src="{% static 'app.js' %}?v=media-viewer-1" defer></script>
+    <link rel="stylesheet" href="{% static 'css/foundation.css' %}?v=phase6">
+    <link rel="stylesheet" href="{% static 'css/content.css' %}?v=phase6">
+    <link rel="stylesheet" href="{% static 'css/tables.css' %}?v=phase6">
+    <link rel="stylesheet" href="{% static 'css/detail-media.css' %}?v=phase6">
+    <link rel="stylesheet" href="{% static 'css/settings.css' %}?v=phase6">
+    <link rel="stylesheet" href="{% static 'css/responsive.css' %}?v=phase6">
+    <script src="{% static 'js/resource-autorefresh.js' %}?v=phase6" defer></script>
+    <script src="{% static 'js/tabs.js' %}?v=phase6" defer></script>
+    <script src="{% static 'js/bulk-selection.js' %}?v=phase6" defer></script>
+    <script src="{% static 'js/save-reason.js' %}?v=phase6" defer></script>
+    <script src="{% static 'js/media-viewer.js' %}?v=phase6" defer></script>
+    <script src="{% static 'js/app.js' %}?v=phase6" defer></script>
 </head>
 <body>
     {% with namespace=request.resolver_match.namespace url_name=request.resolver_match.url_name %}
