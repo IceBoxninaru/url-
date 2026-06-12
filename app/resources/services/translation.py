@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Protocol
 
 import httpx
 from django.conf import settings
@@ -13,6 +14,45 @@ logger = logging.getLogger(__name__)
 TRANSLATION_MAX_SOURCE_CHARS = 1600
 TRANSLATION_MAX_CHUNK_CHARS = 400
 TRANSLATION_ENDPOINT = "https://translate.googleapis.com/translate_a/single"
+
+
+class TranslationProvider(Protocol):
+    def translate_chunk_to_japanese(self, text: str) -> tuple[str, str]:
+        """Return translated text and detected source language."""
+
+
+class GoogleTranslateProvider:
+    def translate_chunk_to_japanese(self, text: str) -> tuple[str, str]:
+        with httpx.Client(
+            timeout=15.0,
+            headers={"User-Agent": settings.CAPTURE_HTTP_USER_AGENT},
+        ) as client:
+            response = client.get(
+                TRANSLATION_ENDPOINT,
+                params={
+                    "client": "gtx",
+                    "sl": "auto",
+                    "tl": "ja",
+                    "dt": "t",
+                    "q": text,
+                },
+            )
+        response.raise_for_status()
+        payload = response.json()
+        translated_parts: list[str] = []
+        detected_language = ""
+        if isinstance(payload, list):
+            if len(payload) > 2 and isinstance(payload[2], str):
+                detected_language = payload[2]
+            if payload and isinstance(payload[0], list):
+                for item in payload[0]:
+                    if isinstance(item, list) and item and isinstance(item[0], str):
+                        translated_parts.append(item[0])
+        return normalize_ai_text("".join(translated_parts)), detected_language
+
+
+def get_translation_provider() -> TranslationProvider:
+    return GoogleTranslateProvider()
 
 
 def normalize_ai_text(text: str) -> str:
@@ -69,46 +109,22 @@ def is_probably_japanese_text(text: str) -> bool:
 
 
 def translate_text_chunk_to_japanese(text: str) -> tuple[str, str]:
-    with httpx.Client(
-        timeout=15.0,
-        headers={"User-Agent": settings.CAPTURE_HTTP_USER_AGENT},
-    ) as client:
-        response = client.get(
-            TRANSLATION_ENDPOINT,
-            params={
-                "client": "gtx",
-                "sl": "auto",
-                "tl": "ja",
-                "dt": "t",
-                "q": text,
-            },
-        )
-    response.raise_for_status()
-    payload = response.json()
-    translated_parts: list[str] = []
-    detected_language = ""
-    if isinstance(payload, list):
-        if len(payload) > 2 and isinstance(payload[2], str):
-            detected_language = payload[2]
-        if payload and isinstance(payload[0], list):
-            for item in payload[0]:
-                if isinstance(item, list) and item and isinstance(item[0], str):
-                    translated_parts.append(item[0])
-    return normalize_ai_text("".join(translated_parts)), detected_language
+    return get_translation_provider().translate_chunk_to_japanese(text)
 
 
-def translate_text_to_japanese(text: str) -> tuple[str, dict]:
+def translate_text_to_japanese(text: str, *, provider: TranslationProvider | None = None) -> tuple[str, dict]:
     normalized = normalize_ai_text(text)
     if not normalized:
         return "", {"translation_status": "empty_source", "detected_language": ""}
     if is_probably_japanese_text(normalized):
         return "", {"translation_status": "source_already_japanese", "detected_language": "ja"}
 
+    provider = provider or get_translation_provider()
     translated_chunks: list[str] = []
     detected_language = ""
     try:
         for chunk in split_translation_chunks(normalized):
-            translated_chunk, chunk_language = translate_text_chunk_to_japanese(chunk)
+            translated_chunk, chunk_language = provider.translate_chunk_to_japanese(chunk)
             if translated_chunk:
                 translated_chunks.append(translated_chunk)
             if chunk_language and not detected_language:

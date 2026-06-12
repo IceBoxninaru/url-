@@ -36,10 +36,13 @@ from .link_checks import (
 )
 from .jobs import enqueue_ai_job, enqueue_capture_job, status_from_snapshot
 from .translation import (
+    GoogleTranslateProvider,
     TRANSLATION_ENDPOINT,
     TRANSLATION_MAX_CHUNK_CHARS,
     TRANSLATION_MAX_SOURCE_CHARS,
+    TranslationProvider,
     build_translation_source_text,
+    get_translation_provider,
     is_probably_japanese_text,
     normalize_ai_text,
     split_translation_chunks,

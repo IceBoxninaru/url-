@@ -2268,6 +2268,24 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         self.assertEqual(translation, "")
         self.assertEqual(payload["translation_status"], "source_already_japanese")
 
+    def test_translate_text_to_japanese_uses_injected_provider(self):
+        class FakeTranslationProvider:
+            def __init__(self):
+                self.chunks = []
+
+            def translate_chunk_to_japanese(self, text):
+                self.chunks.append(text)
+                return "これは英語本文の日本語訳です。", "en"
+
+        provider = FakeTranslationProvider()
+
+        translation, payload = translate_text_to_japanese("Hello world from article body.", provider=provider)
+
+        self.assertEqual(provider.chunks, ["Hello world from article body."])
+        self.assertEqual(translation, "これは英語本文の日本語訳です。")
+        self.assertEqual(payload["translation_status"], "translated")
+        self.assertEqual(payload["detected_language"], "en")
+
     def test_run_ai_pipeline_returns_translation_for_non_japanese_source(self):
         snapshot = Snapshot(
             resource=self.resource,
