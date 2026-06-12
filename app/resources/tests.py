@@ -1674,7 +1674,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         resource.latest_snapshot = snapshot
         resource.save(update_fields=["latest_snapshot"])
 
-        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+        with patch("resources.views.actions.check_resource_link_status", side_effect=lambda current, force=False: current):
             response = self.client.get(reverse("resources:detail", args=[resource.id]))
 
         self.assertEqual(response.status_code, 200)
@@ -1737,7 +1737,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         resource.latest_snapshot = snapshot
         resource.save(update_fields=["latest_snapshot"])
 
-        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+        with patch("resources.views.actions.check_resource_link_status", side_effect=lambda current, force=False: current):
             response = self.client.get(reverse("resources:detail", args=[resource.id]))
 
         self.assertEqual(response.status_code, 200)
@@ -1765,7 +1765,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         resource.latest_snapshot = snapshot
         resource.save(update_fields=["latest_snapshot"])
 
-        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+        with patch("resources.views.actions.check_resource_link_status", side_effect=lambda current, force=False: current):
             response = self.client.get(reverse("resources:detail", args=[resource.id]))
 
         self.assertEqual(response.status_code, 200)
@@ -1803,7 +1803,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         image_dir.mkdir(parents=True, exist_ok=True)
         (image_dir / image_name).write_bytes(b"fake-image-bytes")
 
-        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+        with patch("resources.views.actions.check_resource_link_status", side_effect=lambda current, force=False: current):
             response = self.client.get(reverse("resources:detail", args=[resource.id]))
 
         self.assertEqual(response.status_code, 200)
@@ -1840,7 +1840,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         (screenshot_dir / screenshot_name).write_bytes(b"fake-screenshot")
 
-        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+        with patch("resources.views.actions.check_resource_link_status", side_effect=lambda current, force=False: current):
             response = self.client.get(reverse("resources:detail", args=[resource.id]))
 
         self.assertEqual(response.status_code, 200)
@@ -1907,7 +1907,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         (image_dir / "snapshot_0001_img_01.jpg").write_bytes(b"first-image")
         (image_dir / "snapshot_0002_img_01.jpg").write_bytes(b"second-image")
 
-        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+        with patch("resources.views.actions.check_resource_link_status", side_effect=lambda current, force=False: current):
             response = self.client.get(reverse("resources:detail", args=[resource.id]))
 
         self.assertEqual(response.status_code, 200)
@@ -1928,7 +1928,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             current.last_link_check_http_status = 404
             return current
 
-        with patch("resources.views.check_resource_link_status", side_effect=fake_check):
+        with patch("resources.views.actions.check_resource_link_status", side_effect=fake_check):
             response = self.client.get(reverse("resources:detail", args=[resource.id]))
 
         self.assertEqual(response.status_code, 200)
@@ -1986,7 +1986,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         resource.latest_snapshot = latest_snapshot
         resource.save(update_fields=["latest_snapshot"])
 
-        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+        with patch("resources.views.actions.check_resource_link_status", side_effect=lambda current, force=False: current):
             response = self.client.get(reverse("resources:detail", args=[resource.id]))
 
         self.assertEqual(response.status_code, 200)
@@ -2059,7 +2059,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         video_dir.mkdir(parents=True, exist_ok=True)
         (video_dir / video_name).write_bytes(b"fake-video-bytes")
 
-        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+        with patch("resources.views.actions.check_resource_link_status", side_effect=lambda current, force=False: current):
             response = self.client.get(reverse("resources:detail", args=[resource.id]))
 
         self.assertEqual(response.status_code, 200)
@@ -2096,7 +2096,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         resource.latest_snapshot = snapshot
         resource.save(update_fields=["latest_snapshot"])
 
-        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current):
+        with patch("resources.views.actions.check_resource_link_status", side_effect=lambda current, force=False: current):
             response = self.client.get(reverse("resources:detail", args=[resource.id]))
 
         self.assertEqual(response.status_code, 200)
@@ -2112,7 +2112,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
             title_manual="Manual Check",
         )
 
-        with patch("resources.views.check_resource_link_status", side_effect=lambda current, force=False: current) as mocked_check:
+        with patch("resources.views.actions.check_resource_link_status", side_effect=lambda current, force=False: current) as mocked_check:
             response = self.client.post(
                 reverse("resources:detail", args=[resource.id]),
                 {"_method": "LINK_CHECK"},
@@ -2932,7 +2932,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
     def test_detail_delete_accepts_csrf_protected_method_override(self):
         client = Client(enforce_csrf_checks=True)
         detail_url = reverse("resources:detail", args=[self.resource.id])
-        with patch("resources.views.check_resource_link_status", side_effect=lambda resource, force=False: resource):
+        with patch("resources.views.actions.check_resource_link_status", side_effect=lambda resource, force=False: resource):
             get_response = client.get(detail_url)
         self.assertEqual(get_response.status_code, 200)
         csrf_token = client.cookies["csrftoken"].value
