@@ -2866,7 +2866,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
 
     def test_check_resource_link_status_updates_cached_fields(self):
         with patch(
-            "resources.services.perform_link_check",
+            "resources.services.link_checks.perform_link_check",
             return_value=LinkCheckResult(status=LinkStatus.GONE, http_status=404),
         ):
             check_resource_link_status(self.resource, force=True)
