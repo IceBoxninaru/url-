@@ -10,7 +10,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlparse, urlunparse
 
@@ -50,19 +50,9 @@ from .storage import (
 )
 from .snapshots import build_snapshot_diff_context, build_snapshot_diff_items, get_previous_snapshot
 from .urls import normalize_url
+from .link_checks import DELETE_MARKERS, detect_deleted_like, should_refresh_link_check
 
 logger = logging.getLogger(__name__)
-
-DELETE_MARKERS = [
-    "deleted",
-    "removed",
-    "not found",
-    "unavailable",
-    "このページはご利用いただけません",
-    "削除",
-    "見つかりません",
-    "404",
-]
 
 STOP_WORDS = {
     "the",
@@ -2158,22 +2148,6 @@ def extract_metadata(html: str) -> dict:
         "og_description": meta_value("og:description", "description"),
         "og_image_url": meta_value("og:image"),
     }
-
-
-def detect_deleted_like(text: str, title: str, http_status: int | None) -> bool:
-    if http_status in {404, 410}:
-        return True
-    combined = f"{title}\n{text}".lower()
-    return any(marker in combined for marker in DELETE_MARKERS)
-
-
-def should_refresh_link_check(resource: Resource, *, force: bool = False) -> bool:
-    if force:
-        return True
-    if resource.last_link_check_at is None or resource.link_status == LinkStatus.UNCHECKED:
-        return True
-    refresh_after = timedelta(seconds=settings.LINK_CHECK_CACHE_SECONDS)
-    return timezone.now() - resource.last_link_check_at >= refresh_after
 
 
 def perform_link_check(url: str) -> LinkCheckResult:
