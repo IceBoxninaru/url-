@@ -64,7 +64,9 @@ from .content import extract_metadata, extract_text_from_html
 from .media_discovery import (
     AUDIO_EXTENSIONS,
     ENCODED_MEDIA_URL_PATTERN,
+    MEDIA_DISCOVERY_STRATEGIES,
     MEDIA_TEXT_SCAN_MAX_CHARS,
+    MediaDiscoveryStrategy,
     RAW_MEDIA_URL_PATTERN,
     VIDEO_EXTENSIONS,
     build_media_candidate,
@@ -108,6 +110,7 @@ from .media_discovery import (
     score_instagram_video_candidate,
     score_video_candidate,
     score_x_video_candidate,
+    select_media_discovery_strategy,
     should_scan_media_response_body,
     should_skip_image_url,
     should_skip_video_url,

@@ -3,6 +3,8 @@ from __future__ import annotations
 import html
 import mimetypes
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlparse, urlunparse
 
@@ -190,6 +192,44 @@ def score_instagram_video_candidate(video_url: str) -> int:
     return score
 
 
+def score_x_candidate_detail(candidate: dict) -> int:
+    return score_x_video_candidate(candidate.get("url", ""))
+
+
+@dataclass(frozen=True)
+class MediaDiscoveryStrategy:
+    name: str
+    matches: Callable[[str], bool]
+    media_scope_selectors: tuple[str, ...] = ()
+    video_url_score: Callable[[str], int] | None = None
+    candidate_detail_score: Callable[[dict], int] | None = None
+
+
+MEDIA_DISCOVERY_STRATEGIES = (
+    MediaDiscoveryStrategy(
+        "x",
+        is_x_domain,
+        media_scope_selectors=("article[data-testid='tweet']",),
+        video_url_score=score_x_video_candidate,
+        candidate_detail_score=score_x_candidate_detail,
+    ),
+    MediaDiscoveryStrategy(
+        "instagram",
+        is_instagram_domain,
+        media_scope_selectors=("main article",),
+        video_url_score=score_instagram_video_candidate,
+    ),
+    MediaDiscoveryStrategy("generic", lambda _domain: True),
+)
+
+
+def select_media_discovery_strategy(page_domain: str) -> MediaDiscoveryStrategy:
+    for strategy in MEDIA_DISCOVERY_STRATEGIES:
+        if strategy.matches(page_domain):
+            return strategy
+    return MEDIA_DISCOVERY_STRATEGIES[-1]
+
+
 def dedupe_urls(urls: list[str]) -> list[str]:
     seen: set[str] = set()
     deduped: list[str] = []
@@ -211,20 +251,15 @@ def filter_image_candidate_urls(urls: list[str], page_domain: str) -> list[str]:
 def filter_video_candidate_urls(urls: list[str], page_domain: str) -> list[str]:
     filtered = [url for url in dedupe_urls(urls) if not should_skip_video_url(url)]
     filtered = [url for url in filtered if is_relevant_video_candidate(url, page_domain)]
-    if is_x_domain(page_domain):
-        return sorted(filtered, key=score_x_video_candidate, reverse=True)
-    if is_instagram_domain(page_domain):
-        return sorted(filtered, key=score_instagram_video_candidate, reverse=True)
+    strategy = select_media_discovery_strategy(page_domain)
+    if strategy.video_url_score is not None:
+        return sorted(filtered, key=strategy.video_url_score, reverse=True)
     return filtered
 
 
 def get_playwright_media_scope(page, page_domain: str):
-    selectors: list[str] = []
-    if is_x_domain(page_domain):
-        selectors = ["article[data-testid='tweet']"]
-    elif is_instagram_domain(page_domain):
-        selectors = ["main article"]
-    for selector in selectors:
+    strategy = select_media_discovery_strategy(page_domain)
+    for selector in strategy.media_scope_selectors:
         try:
             locator = page.locator(selector)
             if locator.count():
@@ -813,8 +848,9 @@ def collect_video_candidate_details(
         if candidate is not None:
             candidates.append(candidate)
     merged = merge_media_candidates(candidates)
-    if is_x_domain(page_domain):
-        return sorted(merged, key=lambda candidate: score_x_video_candidate(candidate.get("url", "")), reverse=True)
+    strategy = select_media_discovery_strategy(page_domain)
+    if strategy.candidate_detail_score is not None:
+        return sorted(merged, key=strategy.candidate_detail_score, reverse=True)
     return merged
 
 

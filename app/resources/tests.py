@@ -40,6 +40,7 @@ from resources.services import (
     normalize_media_candidate_url,
     run_ai_pipeline,
     resolve_storage_state_path,
+    select_media_discovery_strategy,
     translate_text_to_japanese,
 )
 from resources.services.media_downloads import select_video_download_strategy
@@ -274,6 +275,11 @@ class URLNormalizationTests(TestCase):
         self.assertEqual(select_video_download_strategy("instagram.com").name, "instagram")
         self.assertEqual(select_video_download_strategy("x.com").name, "x")
         self.assertEqual(select_video_download_strategy("example.com").name, "generic")
+
+    def test_select_media_discovery_strategy_uses_domain_specific_strategy(self):
+        self.assertEqual(select_media_discovery_strategy("instagram.com").name, "instagram")
+        self.assertEqual(select_media_discovery_strategy("x.com").name, "x")
+        self.assertEqual(select_media_discovery_strategy("example.com").name, "generic")
 
     @override_settings(CAPTURE_X_STORAGE_STATE_PATH="storage/auth/x.json")
     def test_resolve_storage_state_path_expands_relative_path_under_root(self):
