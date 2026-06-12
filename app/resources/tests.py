@@ -2166,7 +2166,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         self.assertEqual(ai_job.status, JobStatus.QUEUED)
 
         with patch(
-            "resources.services.translate_text_to_japanese",
+            "resources.services.ai_pipeline.translate_text_to_japanese",
             return_value=("これは英語本文の日本語訳です。", {"translation_status": "translated", "detected_language": "en"}),
         ):
             self.assertTrue(run_one_job())
@@ -2273,7 +2273,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         )
 
         with patch(
-            "resources.services.translate_text_to_japanese",
+            "resources.services.ai_pipeline.translate_text_to_japanese",
             return_value=("これは英語記事の日本語訳です。", {"translation_status": "translated", "detected_language": "en"}),
         ):
             result = run_ai_pipeline(snapshot)
@@ -2384,7 +2384,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         )
 
         with patch(
-            "resources.services.local_llm_chat",
+            "resources.services.ai_pipeline.local_llm_chat",
             return_value=(
                 '{"summary":"保存用の要約です。",'
                 '"translation":"保存用の翻訳です。",'
@@ -2413,7 +2413,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         )
 
         with patch(
-            "resources.services.local_llm_chat",
+            "resources.services.ai_pipeline.local_llm_chat",
             return_value=(
                 '{"summary":"保存用の要約です。",'
                 '"translation":"Hello world from article body.",'
