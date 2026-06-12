@@ -2,19 +2,11 @@
 """Smoke-check the main URL archive pages and read-only API endpoints."""
 from __future__ import annotations
 
-import os
-import sys
-from pathlib import Path
+from _django import configure_django, setup_django
 
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-APP_DIR = ROOT_DIR / "app"
-if str(APP_DIR) not in sys.path:
-    sys.path.insert(0, str(APP_DIR))
+configure_django()
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-
-import django  # noqa: E402
 from django.test import Client  # noqa: E402
 from django.urls import reverse  # noqa: E402
 
@@ -40,7 +32,7 @@ def resolve_path(path_or_factory) -> str:
 
 
 def main() -> int:
-    django.setup()
+    setup_django()
     client = Client()
     failures: list[str] = []
 

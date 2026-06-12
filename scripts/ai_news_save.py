@@ -9,22 +9,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-APP_DIR = ROOT_DIR / "app"
-if str(APP_DIR) not in sys.path:
-    sys.path.insert(0, str(APP_DIR))
+from _config import DEFAULT_AI_NEWS_SAVE_MAX_ITEMS
+from _django import ensure_docker_postgres_db, setup_django
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-
-import django  # noqa: E402
-
-django.setup()
+setup_django()
 
 from django.db import connection, transaction  # noqa: E402
 
@@ -58,12 +51,6 @@ def load_items(path: str) -> list[dict[str, Any]]:
             raise ValueError(f"item {index} is not an object")
         normalized_items.append(item)
     return normalized_items
-
-
-def ensure_postgres_db() -> None:
-    host = str(connection.settings_dict.get("HOST") or "")
-    if connection.vendor != "postgresql" or host != "db":
-        raise RuntimeError(f"refusing to save outside Docker/Postgres: vendor={connection.vendor} host={host}")
 
 
 def validate_item(item: dict[str, Any], *, reject_protected_hosts: bool) -> tuple[str, str, list[str]]:
@@ -106,7 +93,7 @@ def build_note(item: dict[str, Any]) -> str:
 
 
 def save_items(items: list[dict[str, Any]], *, max_items: int, reject_protected_hosts: bool, dry_run: bool) -> dict[str, Any]:
-    ensure_postgres_db()
+    ensure_docker_postgres_db(connection)
     saved: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
@@ -170,7 +157,7 @@ def save_items(items: list[dict[str, Any]], *, max_items: int, reject_protected_
 def main() -> int:
     parser = argparse.ArgumentParser(description="Save curated AI-news URLs.")
     parser.add_argument("--items-json", required=True, help="Path to JSON file, or '-' for stdin.")
-    parser.add_argument("--max-items", type=int, default=12)
+    parser.add_argument("--max-items", type=int, default=DEFAULT_AI_NEWS_SAVE_MAX_ITEMS)
     parser.add_argument("--allow-protected-hosts", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()

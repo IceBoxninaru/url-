@@ -5,21 +5,12 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
-import os
-import sys
-from pathlib import Path
 from typing import Any
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-APP_DIR = ROOT_DIR / "app"
-if str(APP_DIR) not in sys.path:
-    sys.path.insert(0, str(APP_DIR))
+from _config import DEFAULT_AI_NEWS_VERIFY_EXPECTED_MAX, DEFAULT_AI_NEWS_VERIFY_EXPECTED_MIN
+from _django import ensure_docker_postgres_db, setup_django
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-
-import django  # noqa: E402
-
-django.setup()
+setup_django()
 
 from django.db import connection  # noqa: E402
 from django.utils import timezone  # noqa: E402
@@ -31,12 +22,6 @@ from resources.models import LinkStatus, Resource, ResourceStatus  # noqa: E402
 BAD_RESOURCE_STATUSES = {ResourceStatus.FETCH_FAILED, ResourceStatus.MAYBE_DELETED, ResourceStatus.GONE}
 BAD_LINK_STATUSES = {LinkStatus.MAYBE_DELETED, LinkStatus.GONE, LinkStatus.ERROR}
 BAD_JOB_STATUSES = {JobStatus.FAILED, JobStatus.RETRY_WAIT, JobStatus.RUNNING}
-
-
-def ensure_postgres_db() -> None:
-    host = str(connection.settings_dict.get("HOST") or "")
-    if connection.vendor != "postgresql" or host != "db":
-        raise RuntimeError(f"refusing to verify outside Docker/Postgres: vendor={connection.vendor} host={host}")
 
 
 def local_day_bounds(target_date: dt.date) -> tuple[dt.datetime, dt.datetime]:
@@ -112,7 +97,7 @@ def resource_payload(resource: Resource) -> dict[str, Any]:
 
 
 def verify(args: argparse.Namespace) -> dict[str, Any]:
-    ensure_postgres_db()
+    ensure_docker_postgres_db(connection)
     resources = list(queryset_for_args(args))
     items = [resource_payload(resource) for resource in resources]
     failures = [item for item in items if not item["ok"]]
@@ -143,8 +128,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Verify daily AI-news URL saves.")
     parser.add_argument("--date", default=timezone.localdate().isoformat())
     parser.add_argument("--ids", default="", help="Comma or space separated resource ids. Overrides --date.")
-    parser.add_argument("--expected-min", type=int, default=1)
-    parser.add_argument("--expected-max", type=int, default=12)
+    parser.add_argument("--expected-min", type=int, default=DEFAULT_AI_NEWS_VERIFY_EXPECTED_MIN)
+    parser.add_argument("--expected-max", type=int, default=DEFAULT_AI_NEWS_VERIFY_EXPECTED_MAX)
     args = parser.parse_args()
 
     try:

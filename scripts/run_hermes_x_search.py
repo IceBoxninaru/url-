@@ -11,12 +11,14 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from _config import DEFAULT_X_SEARCH_OUTPUT_DIR
+
 
 DEFAULT_HERMES_HOME = Path.home() / "AppData" / "Local" / "hermes"
 DEFAULT_HERMES_PYTHON = (
     DEFAULT_HERMES_HOME / "hermes-agent" / "venv" / "Scripts" / "python.exe"
 )
-DEFAULT_OUTPUT_DIR = Path.home() / ".codex" / "automations" / "ai-url" / "x_search"
+DEFAULT_OUTPUT_DIR = DEFAULT_X_SEARCH_OUTPUT_DIR
 
 MLBEAR2_NEWS_SOURCE_QUERY = (
     "@MLBear2 今朝のAIニュース 今夜のAIニュース AI開発ニュース "

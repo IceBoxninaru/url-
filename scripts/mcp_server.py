@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 import urllib.parse
 import urllib.request
 from typing import Any
 
-BASE_URL = os.environ.get("URL_ARCHIVE_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+from _config import DEFAULT_API_BASE, DEFAULT_HTTP_TIMEOUT_SECONDS
+
+BASE_URL = DEFAULT_API_BASE
 PROTOCOL_VERSION = "2024-11-05"
 
 TOOLS = [
@@ -69,7 +70,7 @@ def http_get(path: str, params: dict[str, Any] | None = None) -> Any:
     url = f"{BASE_URL}{path}"
     if query:
         url = f"{url}?{query}"
-    with urllib.request.urlopen(url, timeout=20) as response:
+    with urllib.request.urlopen(url, timeout=DEFAULT_HTTP_TIMEOUT_SECONDS) as response:
         body = response.read().decode("utf-8")
         return json.loads(body)
 

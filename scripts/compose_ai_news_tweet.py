@@ -10,8 +10,9 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_OUTPUT_DIR = Path.home() / ".codex" / "automations" / "ai-url" / "tweet_drafts"
-DEFAULT_API_BASE = "http://127.0.0.1:8000"
+from _config import DEFAULT_API_BASE, DEFAULT_HTTP_TIMEOUT_SECONDS, DEFAULT_TWEET_OUTPUT_DIR
+
+DEFAULT_OUTPUT_DIR = DEFAULT_TWEET_OUTPUT_DIR
 LONG_POST_CHAR_LIMIT = 25_000
 PREMIUM_POST_CHAR_LIMIT = 1_200
 
@@ -48,7 +49,7 @@ def today_jst() -> str:
 def load_today_items(api_base: str, run_date: str, limit: int) -> list[dict[str, Any]]:
     params = urllib.parse.urlencode({"date": run_date, "limit": limit})
     url = f"{api_base.rstrip('/')}/api/resources/ai-search/?{params}"
-    with urllib.request.urlopen(url, timeout=20) as response:
+    with urllib.request.urlopen(url, timeout=DEFAULT_HTTP_TIMEOUT_SECONDS) as response:
         payload = json.loads(response.read().decode("utf-8"))
     return list(payload.get("items") or [])
 

@@ -1,12 +1,9 @@
-import os
 import sys
-from pathlib import Path
 
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-APP_DIR = ROOT_DIR / "app"
-sys.path.insert(0, str(APP_DIR))
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+from _django import configure_django
+
+configure_django()
 
 from django.core.management import execute_from_command_line  # noqa: E402
 
