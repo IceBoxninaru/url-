@@ -2851,7 +2851,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             http_status=200,
             html="<html><body>video</body></html>",
             extracted_text="video",
-            metadata={"page_title": "Video"},
+            metadata={"page_title": "ビデオ"},
             response_payload={
                 "video_capture": {
                     "candidate_urls": ["https://cdn.example.com/video.mp4"],
@@ -2875,7 +2875,9 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         with patch("resources.management.commands.verify_capture_url.choose_capture_result", return_value=capture_result):
             call_command("verify_capture_url", "https://example.com/video", "--require-video", stdout=output)
 
-        payload = json.loads(output.getvalue())
+        rendered = output.getvalue()
+        self.assertIn("\\u30d3\\u30c7\\u30aa", rendered)
+        payload = json.loads(rendered)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["results"][0]["domain"], "example.com")

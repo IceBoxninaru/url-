@@ -96,6 +96,7 @@ class Command(BaseCommand):
         parser.add_argument("--require-success", action="store_true")
         parser.add_argument("--require-video", action="store_true")
         parser.add_argument("--indent", type=int, default=2)
+        parser.add_argument("--unicode", action="store_true", help="Emit unescaped Unicode JSON.")
 
     def handle(self, *args, **options):
         capture_images = not options["no_images"]
@@ -143,6 +144,6 @@ class Command(BaseCommand):
             "count": len(summaries),
             "results": summaries,
         }
-        self.stdout.write(json.dumps(payload, ensure_ascii=False, indent=options["indent"]))
+        self.stdout.write(json.dumps(payload, ensure_ascii=not options["unicode"], indent=options["indent"]))
         if failed:
             raise CommandError("capture verification failed")
