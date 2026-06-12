@@ -23,7 +23,7 @@ from django.db.models import Max
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from jobs.models import CaptureJob, JobStatus, JobType
+from jobs.models import CaptureJob
 from resources.models import LinkStatus, Resource, ResourceStatus
 from snapshots.models import FetchMethod, Snapshot
 
@@ -51,6 +51,7 @@ from .storage import (
 from .snapshots import build_snapshot_diff_context, build_snapshot_diff_items, get_previous_snapshot
 from .urls import normalize_url
 from .link_checks import DELETE_MARKERS, detect_deleted_like, should_refresh_link_check
+from .jobs import enqueue_ai_job, enqueue_capture_job, status_from_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -2704,39 +2705,6 @@ def persist_snapshot(resource: Resource, result: CaptureResult) -> Snapshot:
         viewport_height=result.viewport_height,
         is_deleted_like=result.deleted_like,
         error_message=result.error_message,
-    )
-
-
-def status_from_snapshot(snapshot: Snapshot) -> str:
-    if snapshot.http_status in {404, 410}:
-        return ResourceStatus.GONE
-    if snapshot.is_deleted_like:
-        return ResourceStatus.MAYBE_DELETED
-    if snapshot.error_message or (snapshot.http_status and snapshot.http_status >= 400):
-        return ResourceStatus.FETCH_FAILED
-    return ResourceStatus.ACTIVE
-
-
-def enqueue_capture_job(resource: Resource, priority: int = 100) -> CaptureJob:
-    return CaptureJob.objects.create(
-        owner=resource.owner,
-        resource=resource,
-        job_type=JobType.CAPTURE,
-        status=JobStatus.QUEUED,
-        priority=priority,
-        scheduled_at=timezone.now(),
-    )
-
-
-def enqueue_ai_job(resource: Resource, snapshot: Snapshot, priority: int = 50) -> CaptureJob:
-    return CaptureJob.objects.create(
-        owner=resource.owner,
-        resource=resource,
-        snapshot=snapshot,
-        job_type=JobType.AI_ENRICH,
-        status=JobStatus.QUEUED,
-        priority=priority,
-        scheduled_at=timezone.now(),
     )
 
 
