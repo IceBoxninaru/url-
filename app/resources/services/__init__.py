@@ -73,6 +73,7 @@ from .local_llm import (
     parse_local_llm_json,
     truncate_ai_output,
 )
+from .artifacts import delete_resource_with_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -2880,22 +2881,3 @@ def execute_ai_job(job: CaptureJob) -> Snapshot:
     snapshot.ai_payload = ai_result.payload
     snapshot.save(update_fields=["ai_summary", "ai_translation", "ai_category", "ai_payload"])
     return snapshot
-
-
-def delete_resource_with_artifacts(resource: Resource) -> None:
-    resource_id = resource.id
-    resource.delete()
-    for root in (
-        settings.HTML_STORAGE_ROOT,
-        settings.TEXT_STORAGE_ROOT,
-        settings.JSON_STORAGE_ROOT,
-        settings.SCREENSHOT_STORAGE_ROOT,
-        settings.IMAGE_STORAGE_ROOT,
-        settings.VIDEO_STORAGE_ROOT,
-    ):
-        target = build_resource_directory(root, resource_id)
-        if target.exists():
-            target = target.resolve()
-            root_path = Path(root).resolve()
-            if root_path in target.parents:
-                shutil.rmtree(target)
