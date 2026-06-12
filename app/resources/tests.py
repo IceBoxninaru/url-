@@ -270,9 +270,10 @@ class URLNormalizationTests(TestCase):
             )
         )
 
-    def test_select_video_download_strategy_uses_instagram_strategy_only_for_instagram(self):
+    def test_select_video_download_strategy_uses_domain_specific_strategy(self):
         self.assertEqual(select_video_download_strategy("instagram.com").name, "instagram")
-        self.assertEqual(select_video_download_strategy("x.com").name, "generic")
+        self.assertEqual(select_video_download_strategy("x.com").name, "x")
+        self.assertEqual(select_video_download_strategy("example.com").name, "generic")
 
     @override_settings(CAPTURE_X_STORAGE_STATE_PATH="storage/auth/x.json")
     def test_resolve_storage_state_path_expands_relative_path_under_root(self):

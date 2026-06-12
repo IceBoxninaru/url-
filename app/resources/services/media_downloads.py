@@ -1224,6 +1224,22 @@ def download_generic_video_assets(
     return result
 
 
+def download_x_video_assets(
+    source_url: str,
+    html: str,
+    extra_urls: list[str] | None = None,
+    page_domain: str = "",
+    extra_candidates: list[dict] | None = None,
+) -> DownloadedVideoAssets:
+    return download_generic_video_assets(
+        source_url,
+        html,
+        extra_urls=extra_urls,
+        page_domain=page_domain,
+        extra_candidates=extra_candidates,
+    )
+
+
 @dataclass(frozen=True)
 class VideoDownloadStrategy:
     name: str
@@ -1233,6 +1249,7 @@ class VideoDownloadStrategy:
 
 VIDEO_DOWNLOAD_STRATEGIES = (
     VideoDownloadStrategy("instagram", is_instagram_domain, download_instagram_video_assets),
+    VideoDownloadStrategy("x", is_x_domain, download_x_video_assets),
     VideoDownloadStrategy("generic", lambda _domain: True, download_generic_video_assets),
 )
 
