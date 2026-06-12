@@ -46,7 +46,7 @@
         </div>
         <div class="snapshot-assets">
             {% if snapshot.screenshot_full_path %}
-                <a href="/{{ snapshot.screenshot_full_path }}" target="_blank" rel="noreferrer" class="snapshot-preview-card">
+                <a href="/{{ snapshot.screenshot_full_path }}" class="snapshot-preview-card" data-media-viewer="image" data-media-title="Snapshot screenshot">
                     <p><strong>ページ全体スクリーンショット</strong></p>
                     <img src="/{{ snapshot.screenshot_full_path }}" alt="Snapshot screenshot" class="screenshot-preview screenshot-preview--compact">
                     <span class="image-card__meta">クリックで拡大表示</span>
@@ -58,7 +58,7 @@
                     <p><strong>保存した画像</strong></p>
                     <div class="image-gallery">
                         {% for image in snapshot.image_assets %}
-                            <a href="/{{ image.path }}" target="_blank" rel="noreferrer" class="image-card">
+                            <a href="/{{ image.path }}" class="image-card" data-media-viewer="image" data-media-title="Captured image {{ forloop.counter }}">
                                 <img src="/{{ image.path }}" alt="Captured image {{ forloop.counter }}">
                                 <span class="image-card__meta">{{ image.size_bytes }} bytes</span>
                             </a>
@@ -72,7 +72,7 @@
                     <p><strong>保存した動画</strong></p>
                     <div class="video-gallery">
                         {% for video in snapshot.video_assets %}
-                            <a href="/{{ video.path }}" target="_blank" rel="noreferrer" class="video-card">
+                            <a href="/{{ video.path }}" class="video-card" data-media-viewer="video" data-media-title="Captured video {{ forloop.counter }}">
                                 <video src="/{{ video.path }}" controls preload="metadata"></video>
                                 <span class="image-card__meta">{{ video.size_bytes }} bytes</span>
                             </a>

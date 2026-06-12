@@ -20,6 +20,7 @@ storage/auth/*
 
 # generated media/check screenshots
 storage/images/
+tmp/
 tmp_mobile_checks/
 *.mp4
 *.mov

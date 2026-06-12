@@ -1,8 +1,11 @@
+from datetime import date, datetime, time, timedelta
+
 from django.contrib import messages
 from django.http import HttpResponse, HttpResponseNotAllowed, JsonResponse, QueryDict
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
@@ -233,6 +236,98 @@ def serialize_resource(resource: Resource, *, detail: bool = False) -> dict:
             }
         )
     return payload
+
+
+def _payload_value(payload: dict, *keys: str) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if value is not None:
+            return str(value)
+    return ""
+
+
+def serialize_ai_search_resource(resource: Resource) -> dict:
+    snapshot = resource.latest_snapshot
+    ai_payload = snapshot.ai_payload if snapshot and isinstance(snapshot.ai_payload, dict) else {}
+    summary = resource.latest_summary
+    translation = resource.latest_translation
+    source = _payload_value(ai_payload, "source", "ai_search_source")
+    search_query = _payload_value(ai_payload, "search_query", "query", "ai_search_query")
+    title = resource.display_title
+    sendable_text = f"**{title}**\n<{resource.original_url}>"
+    if summary:
+        sendable_text += f"\n概要: {truncate_text(summary, limit=220)}"
+    return {
+        "resource_id": resource.id,
+        "title": title,
+        "url": resource.original_url,
+        "summary": summary,
+        "translation": translation,
+        "created_at": isoformat_or_none(resource.created_at),
+        "source": source,
+        "search_query": search_query,
+        "sendable_url": resource.original_url,
+        "sendable_text": sendable_text,
+    }
+
+
+def parse_api_date(raw_value: str | None):
+    if not raw_value:
+        return None
+    try:
+        return date.fromisoformat(raw_value.strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def local_day_bounds(target_date):
+    tz = timezone.get_current_timezone()
+    start = timezone.make_aware(datetime.combine(target_date, time.min), tz)
+    end = timezone.make_aware(datetime.combine(target_date + timedelta(days=1), time.min), tz)
+    return start, end
+
+
+def build_ai_search_queryset(request):
+    query = (request.GET.get("q") or request.GET.get("query") or "").strip()
+    date_value = parse_api_date(request.GET.get("date"))
+    from_value = parse_api_date(request.GET.get("from"))
+    to_value = parse_api_date(request.GET.get("to"))
+
+    queryset = Resource.objects.with_related().filter(search_only=True)
+    if query:
+        queryset = Resource.objects.apply_filters(query=query, visibility="search_only")
+
+    if date_value:
+        start, end = local_day_bounds(date_value)
+        queryset = queryset.filter(created_at__gte=start, created_at__lt=end)
+    else:
+        if from_value:
+            start, _ = local_day_bounds(from_value)
+        else:
+            start, _ = local_day_bounds(timezone.localdate())
+        queryset = queryset.filter(created_at__gte=start)
+        if to_value:
+            _, end = local_day_bounds(to_value)
+            queryset = queryset.filter(created_at__lt=end)
+
+    return queryset.order_by("-created_at", "-id"), query
+
+
+@require_GET
+def api_ai_search_resources(request):
+    limit = parse_api_limit(request.GET.get("limit"), default=20, maximum=100)
+    queryset, query = build_ai_search_queryset(request)
+    total_count = queryset.count()
+    resources = list(queryset[:limit])
+    return JsonResponse(
+        {
+            "items": [serialize_ai_search_resource(resource) for resource in resources],
+            "count": len(resources),
+            "total_count": total_count,
+            "query": query,
+            "limit": limit,
+        }
+    )
 
 
 @require_GET

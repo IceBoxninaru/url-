@@ -437,6 +437,70 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(payload["total_count"], 1)
         self.assertEqual(payload["items"][0]["id"], resource.id)
 
+
+    def test_api_ai_search_resources_defaults_to_today_search_only(self):
+        visible = Resource.objects.create(
+            original_url="https://example.com/visible",
+            normalized_url="https://example.com/visible",
+            domain="example.com",
+            title_manual="Visible Entry",
+        )
+        Resource.objects.create(
+            original_url="https://example.com/ai",
+            normalized_url="https://example.com/ai",
+            domain="example.com",
+            title_manual="AI Entry",
+            search_only=True,
+        )
+        old = Resource.objects.create(
+            original_url="https://example.com/old-ai",
+            normalized_url="https://example.com/old-ai",
+            domain="example.com",
+            title_manual="Old AI Entry",
+            search_only=True,
+        )
+        Resource.objects.filter(pk=old.pk).update(created_at=timezone.now() - timedelta(days=2))
+
+        response = self.client.get(reverse("resources:api_ai_search"), {"limit": 20})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["items"][0]["title"], "AI Entry")
+        self.assertEqual(payload["items"][0]["sendable_url"], "https://example.com/ai")
+        self.assertNotEqual(payload["items"][0]["resource_id"], visible.id)
+
+    def test_api_ai_search_resources_returns_source_and_query_from_payload(self):
+        resource = Resource.objects.create(
+            original_url="https://example.com/ai-payload",
+            normalized_url="https://example.com/ai-payload",
+            domain="example.com",
+            title_manual="AI Payload",
+            search_only=True,
+        )
+        snapshot = Snapshot.objects.create(
+            resource=resource,
+            snapshot_no=1,
+            fetch_url=resource.normalized_url,
+            fetch_method=FetchMethod.HTTP,
+            http_status=200,
+            ai_summary="summary text",
+            ai_translation="translation text",
+            ai_payload={"source": "ai-search", "search_query": "agent tools"},
+        )
+        resource.latest_snapshot = snapshot
+        resource.save(update_fields=["latest_snapshot"])
+
+        response = self.client.get(reverse("resources:api_search_only"), {"query": "Payload", "limit": 5})
+
+        self.assertEqual(response.status_code, 200)
+        item = response.json()["items"][0]
+        self.assertEqual(item["resource_id"], resource.id)
+        self.assertEqual(item["summary"], "summary text")
+        self.assertEqual(item["translation"], "translation text")
+        self.assertEqual(item["source"], "ai-search")
+        self.assertEqual(item["search_query"], "agent tools")
+
     def test_api_resource_detail_includes_latest_snapshot_media_assets(self):
         resource = Resource.objects.create(
             original_url="https://example.com/media",
@@ -1745,6 +1809,8 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "保存した画像")
         self.assertContains(response, f"/storage/images/resource_{resource.id:04d}/{image_name}")
+        self.assertContains(response, 'data-media-viewer="image"')
+        self.assertNotContains(response, 'target="_blank" rel="noreferrer" class="image-card"')
         self.assertFalse(response.context["capture_mismatch"])
 
     def test_detail_displays_screenshot_in_image_tab_without_false_mismatch(self):
@@ -1789,6 +1855,7 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         image_panel = rendered.split('data-tab-panel="images"', 1)[1].split('data-tab-panel="videos"', 1)[0]
         self.assertNotIn(screenshot_path, translation_panel)
         self.assertIn(screenshot_path, image_panel)
+        self.assertIn('data-media-viewer="image"', image_panel)
         self.assertIn("ページ全体スクリーンショット", image_panel)
         self.assertNotContains(response, "保存済みファイルが見つかりません。再取得してください。")
 
@@ -1998,6 +2065,8 @@ class ResourceViewTests(StorageOverrideMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "保存動画")
         self.assertContains(response, f"/storage/videos/resource_{resource.id:04d}/{video_name}")
+        self.assertContains(response, 'data-media-viewer="video"')
+        self.assertNotContains(response, 'target="_blank" rel="noreferrer" class="video-card"')
 
     def test_detail_prompts_recapture_when_capture_flag_and_files_are_out_of_sync(self):
         resource = Resource.objects.create(
@@ -2608,20 +2677,21 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
         }
 
         with patch("resources.services.httpx.Client", return_value=FakeHttpClient(responses)):
-            result = download_video_assets(
-                "https://www.instagram.com/reel/example/",
-                "<html></html>",
-                page_domain="instagram.com",
-                extra_candidates=[
-                    {
-                        "url": "https://scontent.cdninstagram.com/video.mp4",
-                        "source": "network_response",
-                        "media_kind": "video",
-                        "content_type": "video/mp4",
-                        "resource_type": "media",
-                    }
-                ],
-            )
+            with patch("resources.services.get_ffprobe_executable", return_value=None):
+                result = download_video_assets(
+                    "https://www.instagram.com/reel/example/",
+                    "<html></html>",
+                    page_domain="instagram.com",
+                    extra_candidates=[
+                        {
+                            "url": "https://scontent.cdninstagram.com/video.mp4",
+                            "source": "network_response",
+                            "media_kind": "video",
+                            "content_type": "video/mp4",
+                            "resource_type": "media",
+                        }
+                    ],
+                )
 
         self.assertEqual(result.extraction_status, "success")
         self.assertEqual(result.extraction_strategy, "instagram_direct_no_probe")

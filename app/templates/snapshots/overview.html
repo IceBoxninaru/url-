@@ -117,7 +117,7 @@
                             </div>
                         </div>
                         {% if screenshot_file %}
-                            <a href="/{{ screenshot_file.path }}" target="_blank" rel="noreferrer" class="snapshot-preview-card">
+                            <a href="/{{ screenshot_file.path }}" class="snapshot-preview-card" data-media-viewer="image" data-media-title="Snapshot screenshot">
                                 <img src="/{{ screenshot_file.path }}" alt="Snapshot screenshot" class="screenshot-preview">
                             </a>
                         {% elif snapshot.screenshot_full_path %}

@@ -3280,8 +3280,39 @@ def local_llm_chat_completion_url() -> str:
     return f"{base_url}/chat/completions"
 
 
-def local_llm_chat(messages: list[dict]) -> str:
-    model = getattr(settings, "AI_MODEL", "").strip()
+def extract_local_llm_content(payload: dict) -> tuple[str, bool]:
+    choices = payload.get("choices") or []
+    if not choices:
+        raise ValueError("Local LLM response did not include choices.")
+
+    message = choices[0].get("message") or {}
+    content = message.get("content", "")
+    if isinstance(content, list):
+        content = "".join(
+            item.get("text", "") if isinstance(item, dict) else str(item)
+            for item in content
+        )
+    has_reasoning = bool(message.get("reasoning") or message.get("reasoning_content"))
+    return content.strip() if isinstance(content, str) else "", has_reasoning
+
+
+def local_llm_models() -> list[str]:
+    configured_models = [getattr(settings, "AI_MODEL", "")]
+    fallback_models = getattr(settings, "AI_FALLBACK_MODELS", [])
+    if isinstance(fallback_models, str):
+        fallback_models = fallback_models.split(",")
+    configured_models.extend(fallback_models)
+
+    models: list[str] = []
+    for model in configured_models:
+        model_name = str(model).strip()
+        if model_name and model_name not in models:
+            models.append(model_name)
+    return models
+
+
+def local_llm_chat(messages: list[dict], *, model: str | None = None) -> str:
+    model = (model or getattr(settings, "AI_MODEL", "")).strip()
     if not model:
         raise ValueError("AI_MODEL is required for local LLM providers.")
 
@@ -3290,35 +3321,40 @@ def local_llm_chat(messages: list[dict]) -> str:
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
+    request_payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": getattr(settings, "AI_TEMPERATURE", 0.2),
+        "max_tokens": getattr(settings, "AI_MAX_OUTPUT_TOKENS", 1200),
+        "stream": False,
+    }
+
     with httpx.Client(
         timeout=getattr(settings, "AI_REQUEST_TIMEOUT", 90),
         headers=headers,
     ) as client:
-        response = client.post(
-            local_llm_chat_completion_url(),
-            json={
-                "model": model,
-                "messages": messages,
-                "temperature": getattr(settings, "AI_TEMPERATURE", 0.2),
-                "max_tokens": getattr(settings, "AI_MAX_OUTPUT_TOKENS", 1200),
-                "stream": False,
-            },
-        )
-    response.raise_for_status()
-    payload = response.json()
-    choices = payload.get("choices") or []
-    if not choices:
-        raise ValueError("Local LLM response did not include choices.")
+        response = client.post(local_llm_chat_completion_url(), json=request_payload)
+        response.raise_for_status()
+        content, has_reasoning = extract_local_llm_content(response.json())
+        if content:
+            return content
 
-    content = (choices[0].get("message") or {}).get("content", "")
-    if isinstance(content, list):
-        content = "".join(
-            item.get("text", "") if isinstance(item, dict) else str(item)
-            for item in content
-        )
-    if not isinstance(content, str) or not content.strip():
-        raise ValueError("Local LLM response did not include message content.")
-    return content.strip()
+        if has_reasoning and messages:
+            retry_messages = [dict(message) for message in messages]
+            retry_messages[-1]["content"] = (
+                "/no_think\nReturn only the final JSON object. Do not write reasoning.\n"
+                f"{retry_messages[-1].get('content', '')}"
+            )
+            response = client.post(
+                local_llm_chat_completion_url(),
+                json={**request_payload, "messages": retry_messages},
+            )
+            response.raise_for_status()
+            content, _ = extract_local_llm_content(response.json())
+            if content:
+                return content
+
+    raise ValueError("Local LLM response did not include message content.")
 
 
 def parse_local_llm_json(content: str) -> dict:
@@ -3359,8 +3395,26 @@ def truncate_ai_output(value: str, *, limit: int) -> str:
 
 
 def run_local_llm_pipeline(snapshot: Snapshot, base_payload: dict) -> AIResult:
-    content = local_llm_chat(build_local_llm_messages(snapshot))
-    parsed = parse_local_llm_json(content)
+    messages = build_local_llm_messages(snapshot)
+    models = local_llm_models()
+    if not models:
+        raise ValueError("AI_MODEL is required for local LLM providers.")
+
+    parsed = None
+    selected_model = ""
+    last_error: Exception | None = None
+    for model in models:
+        try:
+            content = local_llm_chat(messages, model=model)
+            parsed = parse_local_llm_json(content)
+            selected_model = model
+            break
+        except (httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
+            last_error = exc
+
+    if parsed is None:
+        raise ValueError("Local LLM failed for all configured models.") from last_error
+
     heuristic_tags = base_payload.get("tag_candidates", [])
     tag_candidates = normalize_local_llm_tags(parsed.get("tag_candidates")) or heuristic_tags
 
@@ -3388,7 +3442,7 @@ def run_local_llm_pipeline(snapshot: Snapshot, base_payload: dict) -> AIResult:
         category=category,
         payload={
             **base_payload,
-            "model": getattr(settings, "AI_MODEL", ""),
+            "model": selected_model,
             "tag_candidates": tag_candidates,
             "translation_status": translation_status,
             "translation_detected_language": "ja" if source_is_japanese else "",

@@ -1559,6 +1559,12 @@ input[type="checkbox"] {
     background: var(--panel-muted);
 }
 
+.image-card[data-media-viewer],
+.video-card[data-media-viewer],
+.snapshot-preview-card[data-media-viewer] {
+    cursor: zoom-in;
+}
+
 .image-card img {
     width: 100%;
     aspect-ratio: 4 / 3;
@@ -1583,6 +1589,86 @@ input[type="checkbox"] {
     aspect-ratio: 4 / 3;
     border-radius: 12px;
     background: var(--panel-raised);
+}
+
+body.media-viewer-open {
+    overflow: hidden;
+}
+
+.media-viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: none;
+    grid-template-rows: auto minmax(0, 1fr);
+    background: rgba(2, 6, 12, 0.94);
+    backdrop-filter: blur(10px);
+}
+
+.media-viewer.is-open {
+    display: grid;
+}
+
+.media-viewer__bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    min-height: 58px;
+    padding: 10px 18px;
+    border-bottom: 1px solid rgba(71, 85, 105, 0.38);
+    background: rgba(5, 9, 16, 0.78);
+}
+
+.media-viewer__title {
+    margin: 0;
+    min-width: 0;
+    overflow: hidden;
+    color: #e5edf8;
+    font-size: 0.95rem;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.media-viewer__close {
+    flex: 0 0 auto;
+    width: 42px;
+    min-height: 42px;
+    padding: 0;
+    border: 1px solid rgba(148, 163, 184, 0.42);
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.82);
+    color: #f8fafc;
+    box-shadow: none;
+    font-size: 1.7rem;
+    line-height: 1;
+}
+
+.media-viewer__stage {
+    display: grid;
+    place-items: center;
+    min-height: 0;
+    padding: 18px;
+}
+
+.media-viewer__stage img,
+.media-viewer__stage video {
+    max-width: min(100%, 1280px);
+    max-height: calc(100dvh - 96px);
+    border-radius: 10px;
+    background: #050910;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+}
+
+.media-viewer__stage img {
+    width: auto;
+    height: auto;
+    object-fit: contain;
+}
+
+.media-viewer__stage video {
+    width: min(100%, 1280px);
 }
 
 .diff-list {

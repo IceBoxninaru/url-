@@ -169,13 +169,13 @@
                             <h3>保存した画像・スクリーンショット</h3>
                             <div class="media-grid">
                                 {% if screenshot_file %}
-                                    <a href="/{{ screenshot_file.path }}" target="_blank" rel="noreferrer" class="image-card image-card--screenshot">
+                                    <a href="/{{ screenshot_file.path }}" class="image-card image-card--screenshot" data-media-viewer="image" data-media-title="Page screenshot">
                                         <img src="/{{ screenshot_file.path }}" alt="Page screenshot">
                                         <span class="image-card__meta">ページ全体スクリーンショット</span>
                                     </a>
                                 {% endif %}
                                 {% for image in image_files %}
-                                    <a href="/{{ image.path }}" target="_blank" rel="noreferrer" class="image-card">
+                                    <a href="/{{ image.path }}" class="image-card" data-media-viewer="image" data-media-title="Captured image {{ forloop.counter }}">
                                         <img src="/{{ image.path }}" alt="Captured image {{ forloop.counter }}">
                                         <span class="image-card__meta">ページ内画像 {{ forloop.counter }}</span>
                                     </a>
@@ -193,7 +193,7 @@
                             <h3>保存動画</h3>
                             <div class="media-grid media-grid--video">
                                 {% for video in video_files %}
-                                    <a href="/{{ video.path }}" target="_blank" rel="noreferrer" class="video-card">
+                                    <a href="/{{ video.path }}" class="video-card" data-media-viewer="video" data-media-title="Captured video {{ forloop.counter }}">
                                         <video src="/{{ video.path }}" controls preload="metadata"></video>
                                     </a>
                                 {% endfor %}

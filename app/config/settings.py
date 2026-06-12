@@ -173,6 +173,11 @@ LINK_CHECK_CACHE_SECONDS = int(os.getenv("LINK_CHECK_CACHE_SECONDS", "43200"))
 
 AI_PROVIDER = os.getenv("AI_PROVIDER", "heuristic")
 AI_MODEL = os.getenv("AI_MODEL", "")
+AI_FALLBACK_MODELS = [
+    item.strip()
+    for item in os.getenv("AI_FALLBACK_MODELS", "").split(",")
+    if item.strip()
+]
 AI_MAX_INPUT_CHARS = int(os.getenv("AI_MAX_INPUT_CHARS", "12000"))
 AI_SUMMARY_MAX_CHARS = int(os.getenv("AI_SUMMARY_MAX_CHARS", "320"))
 AI_API_BASE = os.getenv("AI_API_BASE", "http://127.0.0.1:11434/v1").rstrip("/")
