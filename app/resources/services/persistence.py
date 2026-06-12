@@ -13,6 +13,7 @@ from .media_discovery import guess_image_extension, guess_video_extension
 from .storage import move_storage_file, write_storage_file
 from .types import CaptureResult
 
+
 def next_snapshot_no(resource: Resource) -> int:
     latest = resource.snapshots.aggregate(max_no=Max("snapshot_no"))["max_no"] or 0
     return latest + 1
@@ -121,4 +122,3 @@ def persist_snapshot(resource: Resource, result: CaptureResult) -> Snapshot:
         is_deleted_like=result.deleted_like,
         error_message=result.error_message,
     )
-

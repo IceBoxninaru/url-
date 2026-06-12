@@ -39,6 +39,7 @@ from .types import (
 
 logger = logging.getLogger(__name__)
 
+
 def create_temp_download_path(extension: str) -> Path:
     suffix = extension if extension.startswith(".") else f".{extension}"
     fd, raw_path = tempfile.mkstemp(prefix="url-archive-", suffix=suffix)
@@ -1228,4 +1229,3 @@ def download_video_assets(
         result.extraction_strategy = "download"
         result.failure_reason = result.attempts[-1].get("reason", "download_failed")
     return result
-

@@ -45,7 +45,7 @@ class AIJobIsolationTests(TestCase):
             response_payload={"status_code": 200},
         )
 
-        with patch("resources.services.choose_capture_result", return_value=capture_result):
+        with patch("resources.services.job_handlers.choose_capture_result", return_value=capture_result):
             run_one_job()
 
         capture_job = CaptureJob.objects.get(job_type=JobType.CAPTURE)
@@ -53,7 +53,7 @@ class AIJobIsolationTests(TestCase):
         snapshot = Snapshot.objects.get()
         self.assertEqual(capture_job.status, JobStatus.SUCCEEDED)
 
-        with patch("resources.services.run_ai_pipeline", side_effect=RuntimeError("ai down")):
+        with patch("resources.services.job_handlers.run_ai_pipeline", side_effect=RuntimeError("ai down")):
             run_one_job()
 
         ai_job.refresh_from_db()

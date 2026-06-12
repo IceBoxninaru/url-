@@ -2153,7 +2153,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             response_payload={"status_code": 200},
         )
 
-        with patch("resources.services.choose_capture_result", return_value=capture_result):
+        with patch("resources.services.job_handlers.choose_capture_result", return_value=capture_result):
             self.assertTrue(run_one_job())
 
         self.resource.refresh_from_db()
@@ -2445,7 +2445,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             ],
         )
 
-        with patch("resources.services.choose_capture_result", return_value=capture_result):
+        with patch("resources.services.job_handlers.choose_capture_result", return_value=capture_result):
             self.assertTrue(run_one_job())
 
         snapshot = Snapshot.objects.get()
@@ -2479,7 +2479,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             ],
         )
 
-        with patch("resources.services.choose_capture_result", return_value=capture_result):
+        with patch("resources.services.job_handlers.choose_capture_result", return_value=capture_result):
             self.assertTrue(run_one_job())
 
         snapshot = Snapshot.objects.get()
@@ -2520,7 +2520,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             ],
         )
 
-        with patch("resources.services.choose_capture_result", return_value=capture_result):
+        with patch("resources.services.job_handlers.choose_capture_result", return_value=capture_result):
             self.assertTrue(run_one_job())
 
         self.resource.refresh_from_db()
@@ -2559,7 +2559,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             ],
         )
 
-        with patch("resources.services.choose_capture_result", return_value=capture_result):
+        with patch("resources.services.job_handlers.choose_capture_result", return_value=capture_result):
             self.assertTrue(run_one_job())
 
         snapshot = Snapshot.objects.get()
@@ -2829,7 +2829,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             response_payload={"error": "timeout"},
         )
 
-        with patch("resources.services.choose_capture_result", return_value=failure):
+        with patch("resources.services.job_handlers.choose_capture_result", return_value=failure):
             self.assertTrue(run_one_job())
 
         job = CaptureJob.objects.get(job_type=JobType.CAPTURE)
@@ -2856,7 +2856,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             deleted_like=True,
         )
 
-        with patch("resources.services.choose_capture_result", return_value=gone_result):
+        with patch("resources.services.job_handlers.choose_capture_result", return_value=gone_result):
             self.assertTrue(run_one_job())
 
         job = CaptureJob.objects.get(job_type=JobType.CAPTURE)
@@ -2904,7 +2904,7 @@ class CapturePipelineTests(StorageOverrideMixin, TestCase):
             ],
         )
 
-        with patch("resources.services.choose_capture_result", return_value=capture_result):
+        with patch("resources.services.job_handlers.choose_capture_result", return_value=capture_result):
             run_one_job()
 
         snapshot = Snapshot.objects.get()
